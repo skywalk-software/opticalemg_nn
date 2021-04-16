@@ -27,8 +27,8 @@ def normalize(arr: np.array):
 
 
 leapmotion_data = np.array(leapmotion_data)
-# leapmotion_data[:, 3] = normalize(leapmotion_data[:, 3])
-# leapmotion_data[:, 4] = normalize(leapmotion_data[:, 4])
+leapmotion_data[:, 3] = normalize(leapmotion_data[:, 3])
+leapmotion_data[:, 4] = normalize(leapmotion_data[:, 4])
 
 # %%
 train_val_div = 20000
@@ -72,8 +72,7 @@ class NnModel(pl.LightningModule):
             nn.ReLU()
         )
         self.mlp_5 = nn.Sequential(
-            nn.Linear(in_features=8, out_features=4),
-            nn.ReLU()
+            nn.Linear(in_features=8, out_features=4)
         )
         self.loss = nn.L1Loss(reduction='none')
 
@@ -103,7 +102,7 @@ class NnModel(pl.LightningModule):
         self.log("train/yaw_loss", yaw_loss)
         self.log("train/thumb_dist_loss", thumb_dist_loss)
         self.log("train/other_dist_loss", other_dist_loss)
-        return thumb_dist_loss + other_dist_loss
+        return thumb_dist_loss + other_dist_loss + pitch_loss + yaw_loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
@@ -116,7 +115,7 @@ class NnModel(pl.LightningModule):
         self.log("val/yaw_loss", yaw_loss)
         self.log("val/thumb_dist_loss", thumb_dist_loss)
         self.log("val/other_dist_loss", other_dist_loss)
-        return total_loss
+        return thumb_dist_loss + other_dist_loss + pitch_loss + yaw_loss
 
 
 # %%
