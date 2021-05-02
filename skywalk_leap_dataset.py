@@ -17,6 +17,8 @@ class SkywalkLeapDataset(torch.utils.data.Dataset):
                 self.skywalk_idx_to_leapmotion_map += [(skywalk_idx, leapmotion_idx)]
         self.leapmotion_data = leapmotion_data
         self.skywalk_data = skywalk_data
+        self.leapmotion_timestamps = leapmotion_timestamps
+        self.skywalk_timestamps = skywalk_timestamps
         self.skywalk_length = skywalk_length
 
     def __len__(self):
