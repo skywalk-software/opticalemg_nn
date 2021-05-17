@@ -14,7 +14,8 @@ class SkywalkLeapDataset(torch.utils.data.Dataset):
                 break
             if leapmotion_timestamps[leapmotion_idx] - skywalk_timestamps[skywalk_idx] < 10 and \
                     skywalk_idx > skywalk_length:
-                self.skywalk_idx_to_leapmotion_map += [(skywalk_idx, leapmotion_idx)]
+                if (leapmotion_idx - 30) >= 0 and (leapmotion_idx + 30) < len(leapmotion_timestamps):
+                    self.skywalk_idx_to_leapmotion_map += [(skywalk_idx, leapmotion_idx)]
         self.leapmotion_data = leapmotion_data
         self.skywalk_data = skywalk_data
         self.leapmotion_timestamps = leapmotion_timestamps
@@ -27,5 +28,5 @@ class SkywalkLeapDataset(torch.utils.data.Dataset):
     def __getitem__(self, item):
         skywalk_idx, leapmotion_idx = self.skywalk_idx_to_leapmotion_map[item]
         skywalk_input = self.skywalk_data[skywalk_idx - self.skywalk_length: skywalk_idx]
-        leapmotion_output = self.leapmotion_data[leapmotion_idx]
+        leapmotion_output = self.leapmotion_data[[leapmotion_idx]]
         return skywalk_input, leapmotion_output
