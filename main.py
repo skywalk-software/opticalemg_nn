@@ -9,6 +9,9 @@ from torch.utils.data import DataLoader, Dataset, ConcatDataset
 import numpy as np
 
 from skywalk_leap_dataset import SkywalkLeapDataset
+import matplotlib
+
+matplotlib.use('macosx')
 
 
 # %%
@@ -25,6 +28,7 @@ def normalize(arr: np.array, min_val=None, max_val=None):
         if max_val is None:
             max_val = np.quantile(arr, .99)
     return (arr - min_val) / (max_val - min_val)
+
 
 def load_h5(filename: str):
     data_file = h5py.File(filename, 'r')
@@ -45,8 +49,11 @@ def load_h5(filename: str):
 
     leapmotion_data = np.array(leapmotion_data)
     # leapmotion_data[:, 1] = (leapmotion_data[:, 1] > - math.pi / 4) * leapmotion_data[:, 1] - (leapmotion_data[:, 1] <= - math.pi / 4) * leapmotion_data[:, 1]
-    leapmotion_data[:, 3] = 0 * normalize(leapmotion_data[:, 3])
-    leapmotion_data[:, 4] = 0 * normalize(leapmotion_data[:, 4])
+    leapmotion_data[:, 3] = - leapmotion_data[:, 1]
+    leapmotion_data[:, 4] = - leapmotion_data[:, 2]
+    leapmotion_data[:, 1:5][leapmotion_data[:, 1:5] < 0] = 0
+    # leapmotion_data[:, 3] = 0 * normalize(leapmotion_data[:, 3])
+    # leapmotion_data[:, 4] = 0 * normalize(leapmotion_data[:, 4])
 
     train_val_div = len(skywalk_timestamps) // 4 * 3
     train_dataset = SkywalkLeapDataset(
@@ -79,19 +86,20 @@ all_data_path = [
     # "data3/2021-05-11T03-26-26.h5"
     # "data3/2021-05-11T03-37-12.h5"
     # "data3/2021-05-11T21-37-38.h5"
-    "data4/2021-05-16T15-56-44.h5"
+    # "data4/2021-05-16T15-56-44.h5"
+    "data4/2021-05-18T02-39-14.h5"
 ]
 all_data = list(zip(*[load_h5(path) for path in all_data_path]))
 
 train_dataset, val_dataset = ConcatDataset(all_data[0]), ConcatDataset(all_data[1])
 
-#%%
+# %%
 sw_idx, lm_idx = np.array(list(zip(*all_data[0][0].skywalk_idx_to_leapmotion_map)))
 
 lm = normalize(np.sum(np.abs(np.diff(all_data[0][0].leapmotion_data[lm_idx], axis=0)), axis=1))
 sw = normalize(np.sum(np.abs(np.diff(all_data[0][0].skywalk_data[sw_idx], axis=0)), axis=1))
 
-#%%
+# %%
 
 import matplotlib.pyplot as plt
 
@@ -102,25 +110,25 @@ end = start + range_len
 plt.plot(range(range_len), lm[start:end])
 plt.show()
 
-#%%
+# %%
 
 plt.plot(range(range_len), sw[start:end])
 plt.show()
 
-#%%
+# %%
 lm_labels = ["event.valid", "event.pitch", "event.yaw", "event.thumbDist", "event.otherDist"]
 for i in range(5):
     plt.plot(range(range_len), all_data[0][0].leapmotion_data[lm_idx][start:end][:, i], label=lm_labels[i])
 plt.legend()
 plt.show()
 
-#%%
+# %%
 for i in range(12):
     plt.plot(range(range_len), all_data[0][0].skywalk_data[sw_idx][start:end][:, i], label=f"channel {i}")
 plt.legend()
 plt.show()
 
-#%%
+# %%
 start = 0
 range_len = 2000
 end = start + range_len
@@ -250,9 +258,9 @@ logging.getLogger().setLevel(logging.INFO)
 
 mod = NnModel(learning_rate=0.001)
 # trainer = pl.Trainer(max_epochs=6, callbacks=[checkpoint_callback])
-trainer = pl.Trainer(max_epochs=100, auto_lr_find=True)
+trainer = pl.Trainer(max_epochs=40, auto_lr_find=True)
 
-#%%
+# %%
 # mod.load_from_checkpoint("nn.ckpt", learning_rate=0.001)
 # trainer = pl.Trainer(resume_from_checkpoint="nn.ckpt", max_epochs=101)
 
@@ -261,8 +269,8 @@ trainer.fit(model=mod, datamodule=SkywalkDataModel())
 # %%
 trainer.save_checkpoint("nn4.ckpt")
 
-#%%
-mod = NnModel.load_from_checkpoint("nn.ckpt", learning_rate=0.001)
+# #%%
+# mod = NnModel.load_from_checkpoint("nn.ckpt", learning_rate=0.001)
 
 # %%
 np.set_printoptions(precision=4, suppress=True)
@@ -273,8 +281,40 @@ for idx in [100, 200, 300, 400, 500]:
     print("out", np.array(ans_y.detach().numpy()[0]))
     print("ans", data_y[0][1:])
 
+# %%
+# while True:
+#     line = skywalk_serial.readline()
+#     decoded_input = [float(item) for item in line.decode('utf-8').split(",")[:-1]]
+#     if len(decoded_input) != 12:
+#         print(decoded_input)
+#         continue
+#     aggregated_input += [decoded_input]
+#     if not calibrated:
+#         print(len(aggregated_input))
+#         if len(aggregated_input) < 900:
+#             continue
+#         else:
+#             aggregated_input_np = np.array(aggregated_input)
+#             skywalk_min = np.min(aggregated_input_np, axis=0)
+#             skywalk_max = np.max(aggregated_input_np, axis=0)
+#             calibrated = True
+#             aggregated_input = []
+#
+#     if len(aggregated_input) != 90:
+#         continue
+#     aggregated_input_np = np.array(aggregated_input)
+#     for i in range(aggregated_input_np.shape[1]):
+#         aggregated_input_np[:, i] = normalize(aggregated_input_np[:, i], skywalk_min[i], skywalk_max[i])
+#     input_tensor = torch.FloatTensor([aggregated_input_np[[-1]]])
+#     output_tensor = mod(input_tensor)
+#     aggregated_input = aggregated_input[1:]
+#     print(f"{output_tensor[0, 0]: 0.3f} \t {output_tensor[0, 1]: 0.3f} \t {output_tensor[0, 2]: 0.3f} \t {output_tensor[0, 3]: 0.3f}")
 
 # %%
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 SERIAL_PORT = "/dev/cu.usbmodem82125401"
 SERIAL_BAUD_RATE = 115200
 
@@ -287,30 +327,81 @@ skywalk_min = None
 skywalk_max = None
 
 aggregated_input = []
-while True:
-    line = skywalk_serial.readline()
-    decoded_input = [float(item) for item in line.decode('utf-8').split(",")[:-1]]
-    if len(decoded_input) != 12:
-        print(decoded_input)
-        continue
-    aggregated_input += [decoded_input]
-    if not calibrated:
-        print(len(aggregated_input))
-        if len(aggregated_input) < 900:
-            continue
-        else:
-            aggregated_input_np = np.array(aggregated_input)
-            skywalk_min = np.min(aggregated_input_np, axis=0)
-            skywalk_max = np.max(aggregated_input_np, axis=0)
-            calibrated = True
-            aggregated_input = []
 
-    if len(aggregated_input) != 90:
-        continue
-    aggregated_input_np = np.array(aggregated_input)
-    for i in range(aggregated_input_np.shape[1]):
-        aggregated_input_np[:, i] = normalize(aggregated_input_np[:, i], skywalk_min[i], skywalk_max[i])
-    input_tensor = torch.FloatTensor([aggregated_input_np[[-1]]])
-    output_tensor = mod(input_tensor)
-    aggregated_input = aggregated_input[1:]
-    print(f"{output_tensor[0, 0]: 0.3f} \t {output_tensor[0, 1]: 0.3f} \t {output_tensor[0, 2]: 0.3f} \t {output_tensor[0, 3]: 0.3f}")
+# %%
+fig, ax = plt.subplots()
+rects = plt.bar(range(4), np.random.rand(4))
+# ax.set_ylim(-5000, 5000)
+data = [0] * 30, [0] * 30, [0] * 30, [0] * 30
+SERIAL_PORT = "/dev/cu.usbmodem82125401"
+SERIAL_BAUD_RATE = 115200
+raw = serial.Serial(port=SERIAL_PORT, baudrate=SERIAL_BAUD_RATE)
+
+
+# %%
+
+def run(new_data):
+    del data[0][0]
+    del data[1][0]
+    del data[2][0]
+    del data[3][0]
+    data[0].append(new_data[0])
+    data[1].append(new_data[1])
+    data[2].append(new_data[2])
+    data[3].append(new_data[3])
+    ax.set_ylim(0, 2)
+    for rect, new_data_point in zip(rects, new_data):
+        rect.set_height(new_data_point)
+    return rects
+
+
+def data_gen():
+    t = 0
+    while True:
+        line = skywalk_serial.readline()
+        line = skywalk_serial.readline()
+        line = skywalk_serial.readline()
+        line = skywalk_serial.readline()
+        decoded_input = [float(item) for item in line.decode('utf-8').split(",")[:-1]]
+        if len(decoded_input) != 12:
+            print(decoded_input)
+            continue
+        global aggregated_input, calibrated, skywalk_min, skywalk_max
+        aggregated_input += [decoded_input]
+        if not calibrated:
+            print(len(aggregated_input))
+            if len(aggregated_input) < 300:
+                continue
+            else:
+                aggregated_input_np = np.array(aggregated_input)
+                skywalk_min = np.min(aggregated_input_np, axis=0)
+                skywalk_max = np.max(aggregated_input_np, axis=0)
+                calibrated = True
+                aggregated_input = []
+
+        if len(aggregated_input) != 90:
+            continue
+        aggregated_input_np = np.array(aggregated_input)
+        for i in range(aggregated_input_np.shape[1]):
+            aggregated_input_np[:, i] = normalize(aggregated_input_np[:, i], skywalk_min[i], skywalk_max[i])
+        input_tensor = torch.FloatTensor([aggregated_input_np[[-1]]])
+        output_tensor = mod(input_tensor)
+        aggregated_input = aggregated_input[1:]
+        print(f"{output_tensor[0, 0]: 0.3f} \t {output_tensor[0, 1]: 0.3f}")
+        yield output_tensor[0, 0].item(), output_tensor[0, 1].item(), output_tensor[0, 2].item(), output_tensor[0, 3].item()
+    print("exited!")
+
+
+# %%
+skywalk_serial.timeout = 0
+while True:
+    try:
+        line = skywalk_serial.readline()
+        print(line)
+        if line == b'':
+            break
+    except serial.SerialTimeoutException:
+        break
+skywalk_serial.timeout = None
+ani = animation.FuncAnimation(fig, run, frames=data_gen, interval=1, blit=False)
+plt.show()
