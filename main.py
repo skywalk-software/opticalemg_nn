@@ -55,8 +55,8 @@ def load_h5(filename: str):
     # leapmotion_data[:, 1:5][leapmotion_data[:, 1:5] < 0] = 0
     # leapmotion_data[:, 3] = normalize(leapmotion_data[:, 3])
     # leapmotion_data[:, 4] = normalize(leapmotion_data[:, 4])
-    # leapmotion_data[:, 3] = leapmotion_data[:, 3]
-    # leapmotion_data[:, 4] = leapmotion_data[:, 4]
+    leapmotion_data[:, 3] = (leapmotion_data[:, 3] - 60) / 20
+    leapmotion_data[:, 4] = (leapmotion_data[:, 4] - 100) / 40
     print("dataset_length", len(skywalk_timestamps))
 
     train_val_div = len(skywalk_timestamps) // 4 * 3
@@ -94,8 +94,12 @@ all_data_path = [
     # "/Users/jackie/Documents/proc/proto2_data1/2021-07-26T22-01-22.h5"
     # "/Users/jackie/Documents/proc/proto2_data1/2021-08-09T16-57-51.h5"
     # "/Users/jackie/Documents/proc/proto2_data1/2021-08-11T20-06-18.h5"
-    "/Users/jackie/Documents/proc/proto2_data1/2021-08-18T20-15-53.h5",
-    "/Users/jackie/Documents/proc/proto2_data1/2021-08-18T20-31-46.h5"
+    # "/Users/jackie/Documents/proc/proto2_data1/2021-08-18T20-15-53.h5",
+    # "/Users/jackie/Documents/proc/proto2_data1/2021-08-18T20-31-46.h5"
+    # "/Users/jackie/Documents/proc/proto2_data2/2021-08-22T23-55-13.h5",
+    # "/Users/jackie/Documents/proc/proto2_data2/2021-08-22T23-55-13.h5",
+    "/Users/jackie/Documents/proc/proto2_data2/2021-08-25T20-06-50.h5",
+    "/Users/jackie/Documents/proc/proto2_data2/2021-08-25T20-23-32.h5"
 ]
 all_data = list(zip(*[load_h5(path) for path in all_data_path]))
 
@@ -172,23 +176,23 @@ class NnModel(pl.LightningModule):
         self.learning_rate = learning_rate
         self.gamma = gamma
         self.mlp_1 = nn.Sequential(
-            nn.Linear(in_features=64, out_features=48),
+            nn.Linear(in_features=20, out_features=32),
             nn.ReLU()
         )
         self.mlp_2 = nn.Sequential(
-            nn.Linear(in_features=48, out_features=32),
+            nn.Linear(in_features=32, out_features=32),
             nn.ReLU()
         )
         self.mlp_3 = nn.Sequential(
-            nn.Linear(in_features=32, out_features=24),
+            nn.Linear(in_features=32, out_features=16),
             nn.ReLU()
         )
         self.mlp_4 = nn.Sequential(
-            nn.Linear(in_features=24, out_features=12),
+            nn.Linear(in_features=16, out_features=8),
             nn.ReLU()
         )
         self.mlp_5 = nn.Sequential(
-            nn.Linear(in_features=12, out_features=4)
+            nn.Linear(in_features=8, out_features=4)
         )
         self.loss = nn.MSELoss(reduction='none')
 
@@ -214,7 +218,7 @@ class NnModel(pl.LightningModule):
         out = out.unsqueeze(1).repeat(1, y.shape[1], 1)
         loss = torch.mean(self.loss_fn(out, y[:, :, 1:]), dim=0)
         pitch_loss, yaw_loss, thumb_dist_loss, other_dist_loss = torch.min(loss, dim=0)[0]
-        total_loss = pitch_loss + yaw_loss + thumb_dist_loss / 1000 + other_dist_loss / 10000
+        total_loss = pitch_loss + yaw_loss + thumb_dist_loss + other_dist_loss
         self.log("train/loss", total_loss)
         self.log("train/pitch_loss", pitch_loss)
         self.log("train/yaw_loss", yaw_loss)
@@ -228,7 +232,7 @@ class NnModel(pl.LightningModule):
         out = out.unsqueeze(1).repeat(1, y.shape[1], 1)
         loss = torch.mean(self.loss_fn(out, y[:, :, 1:]), dim=0)
         pitch_loss, yaw_loss, thumb_dist_loss, other_dist_loss = torch.min(loss, dim=0)[0]
-        total_loss = pitch_loss + yaw_loss + thumb_dist_loss / 1000 + other_dist_loss / 10000
+        total_loss = pitch_loss + yaw_loss + thumb_dist_loss + other_dist_loss
         self.log("val/loss", total_loss)
         self.log("val/pitch_loss", pitch_loss)
         self.log("val/yaw_loss", yaw_loss)
@@ -280,13 +284,13 @@ trainer = pl.Trainer(max_epochs=100, callbacks=[lr_monitor])
 # trainer.tune(mod, datamodule=SkywalkDataModel())
 
 #%%
-trainer.fit(model=mod, datamodule=SkywalkDataModel())
+# trainer.fit(model=mod, datamodule=SkywalkDataModel())
 
 # %%
-# trainer.save_checkpoint("nn2_1.ckpt")
+# trainer.save_checkpoint("nn2_2.ckpt")
 
 # #%%
-mod = NnModel.load_from_checkpoint("nn2_1.ckpt", learning_rate=0.001)
+mod = NnModel.load_from_checkpoint("nn2_2.ckpt", learning_rate=0.001)
 
 # %%
 import matplotlib.pyplot as plt
@@ -300,15 +304,15 @@ out_y = []
 # x_indexes = list(range(63))
 x_indexes = [7, 8]
 test_x = [[] for x in x_indexes]
-test_range = list(range(5000))
+test_range = list(range(10200))
 
 for idx in test_range:
     data_x, data_y = train_dataset[idx]
     ans_y = mod(torch.Tensor([data_x]))
-    out_x += [np.array(ans_y.detach().numpy()[0])[0]]
-    out_y += [np.array(ans_y.detach().numpy()[0])[1]]
-    ref_x += [data_y[0][1:][0]]
-    ref_y += [data_y[0][1:][1]]
+    out_x += [np.array(ans_y.detach().numpy()[0])[2]]
+    out_y += [np.array(ans_y.detach().numpy()[0])[3]]
+    ref_x += [data_y[0][1:][2]]
+    ref_y += [data_y[0][1:][3]]
     for i, x_idx in enumerate(x_indexes):
         test_x[i] += [data_x[0][x_idx]]
     print("out", np.array(ans_y.detach().numpy()[0]))
@@ -404,7 +408,7 @@ def anim_process(l, arr):
         data[1].append(new_data[1])
         data[2].append(new_data[2])
         data[3].append(new_data[3])
-        ax.set_ylim(-2, 2)
+        ax.set_ylim(-3,  3)
         for rect, new_data_point in zip(rects, new_data):
             rect.set_height(new_data_point)
         return rects
@@ -428,7 +432,7 @@ p.start()
 
 # %%
 
-SERIAL_PORT = "/dev/cu.usbmodem88100401"
+SERIAL_PORT = "/dev/tty.usbmodem01234567891"
 SERIAL_BAUD_RATE = 115200
 skywalk_serial = serial.Serial(port=SERIAL_PORT, baudrate=SERIAL_BAUD_RATE)
 # read until timeout
@@ -447,8 +451,15 @@ skywalk_serial.timeout = None
 # process skywalk data
 while True:
     line = skywalk_serial.readline()
+    line = skywalk_serial.readline()
+    line = skywalk_serial.readline()
+    line = skywalk_serial.readline()
+    line = skywalk_serial.readline()
+    line = skywalk_serial.readline()
+    line = skywalk_serial.readline()
+    line = skywalk_serial.readline()
     decoded_input = [float(item) / 10000 for item in line.decode('utf-8').split(",")[:-1]]
-    if len(decoded_input) != 64:
+    if len(decoded_input) != 20:
         print(decoded_input)
         continue
     # global aggregated_input, calibrated, skywalk_min, skywalk_max
@@ -478,5 +489,5 @@ while True:
     with l:
         arr[0] = output_tensor[0, 0].item()
         arr[1] = output_tensor[0, 1].item()
-        arr[2] = output_tensor[0, 2].item()
-        arr[3] = output_tensor[0, 3].item()
+        arr[2] = output_tensor[0, 2].item() / 2 + 2
+        arr[3] = output_tensor[0, 3].item() / 2 + 2
