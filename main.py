@@ -98,7 +98,7 @@ all_data_path = [
     # "/Users/jackie/Documents/proc/proto2_data1/2021-08-18T20-31-46.h5"
     # "/Users/jackie/Documents/proc/proto2_data2/2021-08-22T23-55-13.h5",
     # "/Users/jackie/Documents/proc/proto2_data2/2021-08-22T23-55-13.h5",
-    "/Users/jackie/Documents/proc/proto2_data2/2021-08-25T20-06-50.h5",
+    # "/Users/jackie/Documents/proc/proto2_data2/2021-08-25T20-06-50.h5",
     "/Users/jackie/Documents/proc/proto2_data2/2021-08-25T20-23-32.h5"
 ]
 all_data = list(zip(*[load_h5(path) for path in all_data_path]))
@@ -281,10 +281,10 @@ trainer = pl.Trainer(max_epochs=100, callbacks=[lr_monitor])
 # %%
 # mod.load_from_checkpoint("nn.ckpt", learning_rate=0.001)
 # trainer = pl.Trainer(resume_from_checkpoint="nn.ckpt", max_epochs=101)
-# trainer.tune(mod, datamodule=SkywalkDataModel())
+trainer.tune(mod, datamodule=SkywalkDataModel())
 
 #%%
-# trainer.fit(model=mod, datamodule=SkywalkDataModel())
+trainer.fit(model=mod, datamodule=SkywalkDataModel())
 
 # %%
 # trainer.save_checkpoint("nn2_2.ckpt")
@@ -293,40 +293,40 @@ trainer = pl.Trainer(max_epochs=100, callbacks=[lr_monitor])
 mod = NnModel.load_from_checkpoint("nn2_2.ckpt", learning_rate=0.001)
 
 # %%
-import matplotlib.pyplot as plt
-
-np.set_printoptions(precision=4, suppress=True)
-
-ref_x = []
-ref_y = []
-out_x = []
-out_y = []
-# x_indexes = list(range(63))
-x_indexes = [7, 8]
-test_x = [[] for x in x_indexes]
-test_range = list(range(10200))
-
-for idx in test_range:
-    data_x, data_y = train_dataset[idx]
-    ans_y = mod(torch.Tensor([data_x]))
-    out_x += [np.array(ans_y.detach().numpy()[0])[2]]
-    out_y += [np.array(ans_y.detach().numpy()[0])[3]]
-    ref_x += [data_y[0][1:][2]]
-    ref_y += [data_y[0][1:][3]]
-    for i, x_idx in enumerate(x_indexes):
-        test_x[i] += [data_x[0][x_idx]]
-    print("out", np.array(ans_y.detach().numpy()[0]))
-    print("ans", data_y[0][1:])
-
-plt.clf()
-plt.plot(test_range, ref_x, label="ref_x")
-plt.plot(test_range, ref_y, label="ref_y")
-plt.plot(test_range, out_x, label="out_x")
-plt.plot(test_range, out_y, label="out_y")
-# for i, x_idx in enumerate(x_indexes):
-#     plt.plot(test_range, normalize(test_x[i]), label=f"test_x_{x_idx}")
-plt.legend()
-plt.ylim(-2, 2)
+# import matplotlib.pyplot as plt
+#
+# np.set_printoptions(precision=4, suppress=True)
+#
+# ref_x = []
+# ref_y = []
+# out_x = []
+# out_y = []
+# # x_indexes = list(range(63))
+# x_indexes = [7, 8]
+# test_x = [[] for x in x_indexes]
+# test_range = list(range(10200))
+#
+# for idx in test_range:
+#     data_x, data_y = train_dataset[idx]
+#     ans_y = mod(torch.Tensor([data_x]))
+#     out_x += [np.array(ans_y.detach().numpy()[0])[2]]
+#     out_y += [np.array(ans_y.detach().numpy()[0])[3]]
+#     ref_x += [data_y[0][1:][2]]
+#     ref_y += [data_y[0][1:][3]]
+#     for i, x_idx in enumerate(x_indexes):
+#         test_x[i] += [data_x[0][x_idx]]
+#     print("out", np.array(ans_y.detach().numpy()[0]))
+#     print("ans", data_y[0][1:])
+#
+# plt.clf()
+# plt.plot(test_range, ref_x, label="ref_x")
+# plt.plot(test_range, ref_y, label="ref_y")
+# plt.plot(test_range, out_x, label="out_x")
+# plt.plot(test_range, out_y, label="out_y")
+# # for i, x_idx in enumerate(x_indexes):
+# #     plt.plot(test_range, normalize(test_x[i]), label=f"test_x_{x_idx}")
+# plt.legend()
+# plt.ylim(-2, 2)
 
 # #%%
 # import csv
@@ -394,10 +394,15 @@ def anim_process(l, arr):
     matplotlib.use('TkAgg')
     import matplotlib.pyplot as plt
     import matplotlib.animation as animation
+    from matplotlib.patches import Circle
     import numpy as np
     data = [0] * 30, [0] * 30, [0] * 30, [0] * 30
     fig, ax = plt.subplots()
-    rects = plt.bar(range(4), np.random.rand(4))
+
+    circle = Circle((0, 0), radius=2, fill=False, color="black")
+    ax.add_patch(circle)
+    plt.xlim(-4, 4)
+    plt.ylim(-4, 4)
 
     def run(new_data):
         del data[0][0]
@@ -409,9 +414,11 @@ def anim_process(l, arr):
         data[2].append(new_data[2])
         data[3].append(new_data[3])
         ax.set_ylim(-3,  3)
-        for rect, new_data_point in zip(rects, new_data):
-            rect.set_height(new_data_point)
-        return rects
+        circle.set_center((new_data[1], new_data[0]))
+        circle.set_radius((new_data[2] + new_data[3] - 4.5))
+        # for rect, new_data_point in zip(rects, new_data):
+        #     rect.set_height(new_data_point)
+        return circle
 
     def data_gen():
         t = 0
@@ -450,10 +457,6 @@ skywalk_serial.timeout = None
 
 # process skywalk data
 while True:
-    line = skywalk_serial.readline()
-    line = skywalk_serial.readline()
-    line = skywalk_serial.readline()
-    line = skywalk_serial.readline()
     line = skywalk_serial.readline()
     line = skywalk_serial.readline()
     line = skywalk_serial.readline()
