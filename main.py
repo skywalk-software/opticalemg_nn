@@ -1,5 +1,6 @@
 import logging
 import math
+from queue import Queue
 
 import h5py
 import pytorch_lightning as pl
@@ -61,7 +62,7 @@ def load_h5(filename: str):
 
     train_val_div = len(skywalk_timestamps) // 4 * 3
     train_dataset = SkywalkLeapDataset(
-        1,
+        243,
         leapmotion_timestamps,
         leapmotion_data,
         skywalk_timestamps[200:train_val_div],
@@ -69,7 +70,7 @@ def load_h5(filename: str):
     )
 
     val_dataset = SkywalkLeapDataset(
-        1,
+        243,
         leapmotion_timestamps,
         leapmotion_data,
         skywalk_timestamps[train_val_div:],
@@ -99,7 +100,9 @@ all_data_path = [
     # "/Users/jackie/Documents/proc/proto2_data2/2021-08-22T23-55-13.h5",
     # "/Users/jackie/Documents/proc/proto2_data2/2021-08-22T23-55-13.h5",
     # "/Users/jackie/Documents/proc/proto2_data2/2021-08-25T20-06-50.h5",
-    "/Users/jackie/Documents/proc/proto2_data2/2021-08-25T20-23-32.h5"
+    # "/Users/jackie/Documents/proc/proto2_data2/2021-08-25T20-23-32.h5",
+    "/Users/jackie/Documents/proc/proto2_data3/2021-09-05T22-49-55.h5",
+    "/Users/jackie/Documents/proc/proto2_data3/2021-09-12T23-49-49.h5",
 ]
 all_data = list(zip(*[load_h5(path) for path in all_data_path]))
 
@@ -176,30 +179,35 @@ class NnModel(pl.LightningModule):
         self.learning_rate = learning_rate
         self.gamma = gamma
         self.mlp_1 = nn.Sequential(
-            nn.Linear(in_features=20, out_features=32),
+            nn.Conv1d(20, 32, kernel_size=3, padding=3, stride=3),
+            nn.BatchNorm1d(32),
             nn.ReLU()
         )
         self.mlp_2 = nn.Sequential(
-            nn.Linear(in_features=32, out_features=32),
+            nn.Conv1d(32, 32, kernel_size=3, padding=3, stride=3),
+            nn.BatchNorm1d(32),
             nn.ReLU()
         )
         self.mlp_3 = nn.Sequential(
-            nn.Linear(in_features=32, out_features=16),
+            nn.Conv1d(32, 16, kernel_size=3, padding=3, stride=3),
+            nn.BatchNorm1d(16),
             nn.ReLU()
         )
         self.mlp_4 = nn.Sequential(
-            nn.Linear(in_features=16, out_features=8),
+            nn.Conv1d(16, 8, kernel_size=3, padding=3, stride=3),
+            nn.BatchNorm1d(8),
             nn.ReLU()
         )
         self.mlp_5 = nn.Sequential(
-            nn.Linear(in_features=8, out_features=4)
+            nn.Conv1d(8, 4, kernel_size=3, padding=3, stride=3)
         )
         self.loss = nn.MSELoss(reduction='none')
+        self.val_loss = nn.L1Loss(reduction='none')
 
     def forward(self, x):
-        x = x[:, -1, :]
+        x = torch.transpose(x, 1, 2)
         out = self.mlp_5(self.mlp_4(self.mlp_3(self.mlp_2(self.mlp_1(x)))))
-        return out
+        return torch.mean(out, dim=2)
 
     def loss_fn(self, out, target):
         return self.loss(out, target)
@@ -230,7 +238,7 @@ class NnModel(pl.LightningModule):
         x, y = batch
         out = self(x)
         out = out.unsqueeze(1).repeat(1, y.shape[1], 1)
-        loss = torch.mean(self.loss_fn(out, y[:, :, 1:]), dim=0)
+        loss = torch.mean(self.val_loss(out, y[:, :, 1:]), dim=0)
         pitch_loss, yaw_loss, thumb_dist_loss, other_dist_loss = torch.min(loss, dim=0)[0]
         total_loss = pitch_loss + yaw_loss + thumb_dist_loss + other_dist_loss
         self.log("val/loss", total_loss)
@@ -276,7 +284,7 @@ logging.getLogger().setLevel(logging.DEBUG)
 mod = NnModel(learning_rate=0.0005, gamma=1)
 # trainer = pl.Trainer(max_epochs=6, callbacks=[checkpoint_callback])
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
-trainer = pl.Trainer(max_epochs=100, callbacks=[lr_monitor])
+trainer = pl.Trainer(max_epochs=30, callbacks=[lr_monitor])
 
 # %%
 # mod.load_from_checkpoint("nn.ckpt", learning_rate=0.001)
@@ -287,46 +295,56 @@ trainer.tune(mod, datamodule=SkywalkDataModel())
 trainer.fit(model=mod, datamodule=SkywalkDataModel())
 
 # %%
-# trainer.save_checkpoint("nn2_2.ckpt")
+# trainer.save_checkpoint("nn2_3_1.ckpt")
 
 # #%%
-mod = NnModel.load_from_checkpoint("nn2_2.ckpt", learning_rate=0.001)
+mod = NnModel.load_from_checkpoint("nn2_3_1.ckpt", learning_rate=0.001)
 
 # %%
-# import matplotlib.pyplot as plt
-#
-# np.set_printoptions(precision=4, suppress=True)
-#
-# ref_x = []
-# ref_y = []
-# out_x = []
-# out_y = []
-# # x_indexes = list(range(63))
-# x_indexes = [7, 8]
-# test_x = [[] for x in x_indexes]
-# test_range = list(range(10200))
-#
-# for idx in test_range:
-#     data_x, data_y = train_dataset[idx]
-#     ans_y = mod(torch.Tensor([data_x]))
-#     out_x += [np.array(ans_y.detach().numpy()[0])[2]]
-#     out_y += [np.array(ans_y.detach().numpy()[0])[3]]
-#     ref_x += [data_y[0][1:][2]]
-#     ref_y += [data_y[0][1:][3]]
-#     for i, x_idx in enumerate(x_indexes):
-#         test_x[i] += [data_x[0][x_idx]]
-#     print("out", np.array(ans_y.detach().numpy()[0]))
-#     print("ans", data_y[0][1:])
-#
-# plt.clf()
-# plt.plot(test_range, ref_x, label="ref_x")
-# plt.plot(test_range, ref_y, label="ref_y")
-# plt.plot(test_range, out_x, label="out_x")
-# plt.plot(test_range, out_y, label="out_y")
-# # for i, x_idx in enumerate(x_indexes):
-# #     plt.plot(test_range, normalize(test_x[i]), label=f"test_x_{x_idx}")
-# plt.legend()
-# plt.ylim(-2, 2)
+import matplotlib.pyplot as plt
+
+np.set_printoptions(precision=4, suppress=True)
+
+ref_a = []
+ref_b = []
+ref_x = []
+ref_y = []
+out_x = []
+out_y = []
+out_a = []
+out_b = []
+# x_indexes = list(range(63))
+x_indexes = [7, 8]
+test_x = [[] for x in x_indexes]
+test_range = list(range(41500))
+mod.eval()
+
+for idx in test_range:
+    data_x, data_y = val_dataset[idx]
+    ans_y = mod(torch.Tensor([data_x]))
+    out_a += [np.array(ans_y.detach().numpy()[0])[0]]
+    out_b += [np.array(ans_y.detach().numpy()[0])[1]]
+    out_x += [np.array(ans_y.detach().numpy()[0])[2]]
+    out_y += [np.array(ans_y.detach().numpy()[0])[3]]
+    ref_a += [data_y[0][1:][0]]
+    ref_b += [data_y[0][1:][1]]
+    ref_x += [data_y[0][1:][2]]
+    ref_y += [data_y[0][1:][3]]
+    for i, x_idx in enumerate(x_indexes):
+        test_x[i] += [data_x[0][x_idx]]
+    print("out", np.array(ans_y.detach().numpy()[0]))
+    print("ans", data_y[0][1:])
+#%%
+
+plt.clf()
+plt.plot(test_range, ref_x, label="ref_x")
+plt.plot(test_range, ref_y, label="ref_y")
+plt.plot(test_range, out_x, label="out_x")
+plt.plot(test_range, out_y, label="out_y")
+# for i, x_idx in enumerate(x_indexes):
+#     plt.plot(test_range, normalize(test_x[i]), label=f"test_x_{x_idx}")
+plt.legend()
+plt.ylim(-2, 2)
 
 # #%%
 # import csv
@@ -373,6 +391,7 @@ mod = NnModel.load_from_checkpoint("nn2_2.ckpt", learning_rate=0.001)
 import numpy as np
 import serial
 import multiprocess
+multiprocess.set_start_method('fork', force=True)
 from multiprocess import Process, Value, Array, Lock
 
 calibrated = True
@@ -381,7 +400,7 @@ skywalk_max = None
 
 aggregated_input = []
 
-multiprocess.set_start_method('spawn')
+
 
 
 # %%
@@ -415,7 +434,7 @@ def anim_process(l, arr):
         data[3].append(new_data[3])
         ax.set_ylim(-3,  3)
         circle.set_center((new_data[1], new_data[0]))
-        circle.set_radius((new_data[2] + new_data[3] - 4.5))
+        circle.set_radius((new_data[2] + new_data[3] - 2))
         # for rect, new_data_point in zip(rects, new_data):
         #     rect.set_height(new_data_point)
         return circle
@@ -455,16 +474,22 @@ while True:
 # resume unlimited timeout
 skywalk_serial.timeout = None
 
+input_queue = Queue()
+
 # process skywalk data
+iter = 0
 while True:
-    line = skywalk_serial.readline()
-    line = skywalk_serial.readline()
-    line = skywalk_serial.readline()
+    iter += 1
     line = skywalk_serial.readline()
     decoded_input = [float(item) / 10000 for item in line.decode('utf-8').split(",")[:-1]]
     if len(decoded_input) != 20:
         print(decoded_input)
         continue
+    input_queue.put(decoded_input)
+    if input_queue.qsize() <= 64:
+        continue
+    else:
+        input_queue.get()
     # global aggregated_input, calibrated, skywalk_min, skywalk_max
     # aggregated_input += [decoded_input]
     # if not calibrated:
@@ -480,15 +505,17 @@ while True:
 
     # if len(aggregated_input) != 90:
     #     continue
-    aggregated_input_np = np.array(aggregated_input)
+    aggregated_input_np = np.array(input_queue.queue)
+    if iter % 10 != 1:
+        continue
     # for i in range(aggregated_input_np.shape[1]):
     #     aggregated_input_np[:, i] = normalize(aggregated_input_np[:, i], skywalk_min[i], skywalk_max[i])
-    input_tensor = torch.FloatTensor([[decoded_input]])
+    input_tensor = torch.FloatTensor([aggregated_input_np])
     output_tensor = mod(input_tensor)
-    print("input_tensor", input_tensor)
-    print("output_tensor", output_tensor)
+    # print("input_tensor", input_tensor)
+    # print("output_tensor", output_tensor)
     aggregated_input = aggregated_input[1:]
-    print(f"{output_tensor[0, 0]: 0.3f} \t {output_tensor[0, 1]: 0.3f}")
+    # print(f"{output_tensor[0, 0]: 0.3f} \t {output_tensor[0, 1]: 0.3f}")
     with l:
         arr[0] = output_tensor[0, 0].item()
         arr[1] = output_tensor[0, 1].item()
