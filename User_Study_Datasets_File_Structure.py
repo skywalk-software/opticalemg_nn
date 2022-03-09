@@ -5,25 +5,31 @@ Created on Tues Mar  8 13:09:52 2022
 @author: tyler 
 """
 
-#%% Time-based 1D CNN Modelv2 (1D Convolution Across Time)
+#%% Imports
 import pandas as pd
 import numpy as np
-
+import h5py
 import matplotlib.pyplot as plt
+
+from datetime import datetime
+from os import listdir
+from os.path import isfile, join
 
 import tensorflow as tf
 from tensorflow import keras
 # cnn model
 from keras.models import Sequential
 #from keras.layers import LSTM
-from keras import layers
 from keras.layers import Dense
 from keras.layers import Flatten
 from keras.layers import Dropout
+from keras.layers import BatchNormalization
 from keras.layers.convolutional import Conv1D
 from keras.layers.convolutional import MaxPooling1D
 from keras.layers.convolutional import AveragePooling1D
-from sklearn.metrics import accuracy_score
+from keras.utils import to_categorical
+from tensorflow.keras.preprocessing import timeseries_dataset_from_array
+from tensorflow.keras import layers
 
 #%% FUNCTION - CREATE USER OBJECT CLASS
 # TODO: make trial_types a dictionary where keys are trial types and values are number of trials of that type?
@@ -295,7 +301,7 @@ def applyTimeseriesCNN_test(trainDataset, testDataset, epochs, kernel_size, regr
     model.add(BatchNormalization())
     model.add(Flatten())
     model.add(Dense(30, activation='relu'))
-    model.add(Dense(6, activation='softmax'))
+    model.add(Dense(2, activation='softmax'))
 
     # Use categorical crossentropy for one-hot encoded
     # Use sparse categorical crossentropy for 1D integer encoded
@@ -314,11 +320,24 @@ def applyTimeseriesCNN_test(trainDataset, testDataset, epochs, kernel_size, regr
     return model, predictions
 
 
+def checkAccuracy(model, test_dataset, test_labels_array, sequence_length):
+    predictions_test = model.predict(test_dataset)
+    predictions = np.argmax(np.array(predictions_test), axis=1)
+    
+# def getRisingEdgeIndices(dataframe):
+#     new_first_row  = pd.DataFrame([0], columns=['contact'], index = [0])
+#     new_last_row  = pd.DataFrame([0], columns=['contact'], index = [(max(contactDf.index)+1)])
+#     # Right-shift the array (rising), then flip the ones to zeros
+#     contactDf.index += 1
+#     rising = (~(pd.concat([new_first_row, contactDf]).astype(bool))).astype(float)
+#     # Multiply by the original and get the indices of the remaining ones to get rising edges
+#     contactDf.index -= 1
+#     risingEdgeDf = rising * pd.concat([contactDf,new_last_row])
+#     risingEdgeIndices = risingEdgeDf.index[risingEdgeDf['contact'] == True].tolist()
+    
+
 
 #%%
-from datetime import datetime
-from os import listdir
-from os.path import isfile, join
 
 # DATA IMPORTING, PROCESSING, AND ML PIPELINE
 # 1. Import all data into User and Trial data structure [eventually this will be the structure of the database we fetch from]
@@ -355,10 +374,12 @@ test_dataset, test_data_array, test_labels_array = timeseriesFromSessionsList(te
 
 model, predictions = applyTimeseriesCNN_test(train_dataset, test_dataset, epochs=5, kernel_size=5, regrate=0.1, verbose=1)
 
-#%% PLOT RESULTS
 
-plt.plot(test_labels_array)
-plt.plot(predictions, '.', alpha=0.5)
+
+#%% SAVE MODEL AND PLOT RESULTS
+model.save("../models/2022_03_08_1DCNN_HL2_v1")
+# plt.plot(test_labels_array)
+# plt.plot(predictions, '.', alpha=0.5)
 # Postprocessing steps
 # pulse_leg = 20
 # preds_TFCNN = np.array(applyDebouncer(binary_pred_array, pulse_leg))
@@ -369,25 +390,16 @@ plt.plot(predictions, '.', alpha=0.5)
 # plt.plot(train_sessions_list[0]['contact'][0]*10000)
 
 #%% GAH FINISH THIS LATER
-session = trials_list[5].session_data[1]
+# session = trials_list[5].session_data[1]
 
-power_copy = session['skywalk_power'].copy()
-power_copy.drop(columns=[0,1,2,3,4,5,6], inplace = True)
-power_copy.columns += 13
-extended_power_array = pd.concat([session['skywalk_power'], power_copy], axis=1)
-temp_power_array = pd.DataFrame(np.zeros(session['skywalk'].shape),index=session['skywalk'].index)
-for ind in extended_power_array.index:
-    temp_power_array.loc[[ind]] = np.array(extended_power_array.loc[[ind]])
+# power_copy = session['skywalk_power'].copy()
+# power_copy.drop(columns=[0,1,2,3,4,5,6], inplace = True)
+# power_copy.columns += 13
+# extended_power_array = pd.concat([session['skywalk_power'], power_copy], axis=1)
+# temp_power_array = pd.DataFrame(np.zeros(session['skywalk'].shape),index=session['skywalk'].index)
+# for ind in extended_power_array.index:
+#     temp_power_array.loc[[ind]] = np.array(extended_power_array.loc[[ind]])
     
-temp_power_array[temp_power_array.index > 'ind']
+# temp_power_array[temp_power_array.index > 'ind']
 
 
-#%%
-def takeMeanDiff(data, n):
-
-  new = data.copy()
-
-  for i in range(n,len(data)):
-    new[i] = data[i] - np.mean(data[i-n:i], axis=0)
-
-  return new[n:]
