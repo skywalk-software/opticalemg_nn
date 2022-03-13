@@ -27,7 +27,7 @@ from keras.layers import BatchNormalization
 from keras.layers.convolutional import Conv1D
 from keras.layers.convolutional import MaxPooling1D
 from keras.layers.convolutional import AveragePooling1D
-from keras.utils import to_categorical
+from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.preprocessing import timeseries_dataset_from_array
 from tensorflow.keras import layers
 
