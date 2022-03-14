@@ -1,3 +1,7 @@
+import socket
+import socketserver
+import threading
+
 from tensorflow.keras.models import load_model
 import numpy as np
 import serial
@@ -23,6 +27,38 @@ mean_subtracted_queue = Queue()
 
 last_decoded_input = None
 iteration_cnt = 0
+click = False
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(("0.0.0.0", 30785))
+s.listen(1)
+
+clients = []
+
+
+def server_thread():
+    print("server started!")
+    while True:
+        c, addr = s.accept()
+        print(f"{addr} connected!")
+        global clients
+        clients += [c]
+
+
+def send_message(message):
+    disconnected_clients = []
+    for client in clients:
+        try:
+            client.send((message + "\n").encode())
+        except ConnectionResetError:
+            print(f"a client has disconnected")
+            disconnected_clients += [client]
+    for client in disconnected_clients:
+        clients.remove(client)
+
+
+threading.Thread(target=server_thread, args=()).start()
+
 while True:
     iteration_cnt += 1
     line = skywalk_serial.readline().decode('utf-8')
@@ -68,4 +104,13 @@ while True:
         mean_subtracted_queue.get()
 
     input_array = np.array([mean_subtracted_queue.queue])
-    print(model(input_array))
+    result = model(input_array)
+
+    # print(result[0])
+    if result[0][0] < result[0][1]:
+        click = True
+        send_message("1")
+    else:
+        click = False
+        send_message("0")
+
