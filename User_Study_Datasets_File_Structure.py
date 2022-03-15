@@ -10,10 +10,12 @@ import pandas as pd
 import numpy as np
 import h5py
 import matplotlib.pyplot as plt
+import random
 
 from datetime import datetime
 from os import listdir
 from os.path import isfile, join
+from tslearn.preprocessing import TimeSeriesResampler
 
 import tensorflow as tf
 from tensorflow import keras
@@ -27,7 +29,7 @@ from keras.layers import BatchNormalization
 from keras.layers.convolutional import Conv1D
 from keras.layers.convolutional import MaxPooling1D
 from keras.layers.convolutional import AveragePooling1D
-from tensorflow.keras.utils import to_categorical
+from keras.utils import to_categorical
 from tensorflow.keras.preprocessing import timeseries_dataset_from_array
 from tensorflow.keras import layers
 
@@ -163,11 +165,11 @@ class User(object):
         return num_sessions_list.astype(int)
         
 #%% FUNCTION - CREATE TRIAL OBJECT CLASS
-# TODO: define function to get how many skywalk channels in the data
 # TODO: define data structure that defines what e.g. contact data means for a given trial type
 # TODO: write function to check if any timestamp issues in data as we import it (e.g. a big jump in time)
 # TODO: add method to auto-check contact arrays for quick pulses / errors during the import
 # TODO: write function to remove a particular session and update the num_sessions
+# TODO: define a better user prompt for new trials
 
 class Trial(object):
     def __init__(self, filepath):
@@ -258,6 +260,8 @@ class Trial(object):
                         self.session_data[i][data_stream] = pd.DataFrame(np.array(f[sessions_list[i]][(data_stream+'_data')][()]), columns=channel_names)
                         # Add timestamps in the index
                         self.session_data[i][data_stream].index = np.array(f[sessions_list[i]][(data_stream+'_timestamps')][()])
+                        
+                        
         
     def __repr__(self):
         return f'Trial <trial_type={self.trial_type}, user_id={self.user_id}, date={self.date}, firmware_version={self.firmware_version}, hand={self.hand}, num_sessions={self.num_sessions}>'
@@ -266,6 +270,49 @@ class Trial(object):
         if type(other) is type(self):
             return (self.date == other.date and self.time == other.time and self.user_id == other.user_id and self.hand == other.hand)
         return False
+    
+#%% FUNCTION - RESAMPLES ONE TIMESTAMPED ARRAY TO THE SHAPE OF ANOTHER
+# resampled_accelerometer_data = resampleData(session['accelerometer'], session['skywalk'])
+# TODO make this smarter so it just interleaves the timestamps regardless, and can handle offset (e.g. if we truncate the skwyalk data with meanSubtract)
+# TODO realized that it may be easiest to resample using the pandas method
+def resampleData(data_to_resample, correct_size_data):
+    if (np.abs(data_to_resample.index[0] - correct_size_data.index[0]) > 500000) or (np.abs(data_to_resample.index[-1] - correct_size_data.index[-1]) > 500000):
+        print("WARNING: array start and/or end indices are over 1/2 second off. data_to_resample indices are", data_to_resample.index, "correct_size_data indices are: ", correct_size_data.index)
+    new_timestamps = TimeSeriesResampler(sz=correct_size_data.shape[0]).fit_transform(data_to_resample.index)
+    new_timestamps = np.squeeze(new_timestamps)
+    resampled_data = pd.DataFrame(index=new_timestamps, columns = data_to_resample.columns)
+    
+    for col in data_to_resample.columns:
+        intermediate_resampled_data = TimeSeriesResampler(sz=correct_size_data.shape[0]).fit_transform(data_to_resample[col].values)
+        intermediate_resampled_data = np.squeeze(intermediate_resampled_data)
+        resampled_data[col] = intermediate_resampled_data
+        
+    return resampled_data
+
+# FUNCTION - Resamples all IMU data to the size of Skywalk data for a given list of sessions (NOT in place)
+def resampleIMUData(sessions_list):
+    new_sessions_list = [None]*len(sessions_list)
+    for i in range(len(sessions_list)):
+        new_sessions_list[i] = sessions_list[i].copy()
+        new_sessions_list[i]['accelerometer'] = resampleData(new_sessions_list[i]['accelerometer'], new_sessions_list[i]['skywalk'])
+        new_sessions_list[i]['gyroscope'] = resampleData(new_sessions_list[i]['gyroscope'], new_sessions_list[i]['skywalk'])
+        new_sessions_list[i]['magnetometer'] = resampleData(new_sessions_list[i]['magnetometer'], new_sessions_list[i]['skywalk'])
+        new_sessions_list[i]['quaternion'] = resampleData(new_sessions_list[i]['quaternion'], new_sessions_list[i]['skywalk'])
+    return new_sessions_list
+
+# FNCTION - drops unshared indices between IMU and Skywalk data
+# TODO combine this function with the resampleData function so it actually interleaves timestamps in an intelligent way
+def correctIMUIndices(sessions_list, mean_width):
+    new_sessions_list = [None]*len(sessions_list)
+    for i in range(len(sessions_list)):
+        new_sessions_list[i] = sessions_list[i].copy()
+        new_sessions_list[i]['accelerometer'] = new_sessions_list[i]['accelerometer'].iloc[mean_width:]
+        new_sessions_list[i]['gyroscope'] = new_sessions_list[i]['gyroscope'].iloc[mean_width:]
+        new_sessions_list[i]['magnetometer'] = new_sessions_list[i]['magnetometer'].iloc[mean_width:]
+        new_sessions_list[i]['quaternion'] = new_sessions_list[i]['quaternion'].iloc[mean_width:]
+
+    return new_sessions_list
+    
 
 #%% FUNCTION - TAKES IN PREPROCESSED LIST OF SESSIONS, OUTPUTS A TIMESERIES DATASET 
 # TODO: Eliminate the timeseries issues from just concatenating the sessions together
@@ -273,44 +320,66 @@ class Trial(object):
 from tensorflow.keras.preprocessing import timeseries_dataset_from_array
 import tensorflow as tf
 from tensorflow import keras
+from sklearn import preprocessing
 
-def timeseriesFromSessionsList(sessions_list, sequence_length):
+def timeseriesFromSessionsList(sessions_list, sequence_length, fit_scaler = False, scaler_to_use = None, IMU_data = None):
     labels_array = np.empty((0,))
     data_array = np.empty((0,sessions_list[0]['skywalk'].shape[1]))
     for session in sessions_list:
         # Collapse labels onto skywalk timestamps
         labels_array = np.append(labels_array, np.array(session['contact'][0][session['skywalk'].index]), axis=0)
+        partial_data_array = np.array(session['skywalk'])                   
+        # add IMU data if applicable
+        if IMU_data is not None:
+            for data_stream in IMU_data:
+                partial_data_array = np.append(partial_data_array, np.array(session[data_stream]), axis=1)
         data_array = np.append(data_array, np.array(session['skywalk']), axis=0)
 
-    out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array, labels_array, sequence_length=11, sequence_stride=1, sampling_rate=1, batch_size=32, shuffle=False, seed=None, start_index=None, end_index=None)
-    return out_dataset, data_array, labels_array
-
-#%% FUNCTIONS - PREPROCESS LIST OF SESSIONS
-
-# TODO write function to convert skywalk and skywalk_power into one datastream
-# TODO write function to drop the last two rows of contact data
-
-# def powerScaleSkywalkData(sessions_list):
-#     # Power is reported for 20 channels, data is 33 (all 20, then the last 13)
-#     # TODO currently 17 and 19 are unused (need to map 16-> 17 and 18-> 19), uncommon that they're different though
+    # if fitting a new scaler
+    if fit_scaler:
+        if scaler_to_use is not None:
+            raise ValueError("Cannot assign scaler and fit a new one! Either change fit_scaler to False or remove scaler_to_use.")
+        scaler = preprocessing.StandardScaler().fit(data_array)
+        data_array = scaler.transform(data_array)
+        out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array, labels_array, sequence_length=sequence_length, sequence_stride=1, sampling_rate=1, batch_size=32, shuffle=False, seed=None, start_index=None, end_index=None)
+        return out_dataset, data_array, labels_array, scaler
     
-#     for session in sessions_list:
-#         power_copy = session['skywalk_power'].copy()
-#         power_copy.drop(columns=[0,1,2,3,4,5,6], inplace = True)
-#         power_copy.columns += 13
-#         extended_power_array = pd.concat([session['skywalk_power'], power_copy], axis=1)
-#         temp_power_array = pd.DataFrame(np.zeros(session['skywalk'].shape),index=session['skywalk'].index)
-#         for ind in extended_power_array.index:
-#             temp_power_array.loc[[ind]] = np.array(extended_power_array.loc[[ind]])
-        
-        
-#         session['skywalk_scaled'] = session['skywalk']
-#     labels_array = np.append(labels_array, np.array(session['contact'][0][session['skywalk'].index]), axis=0)
-#     data_array = np.append(data_array, np.array(session['skywalk']), axis=0)
+    # If scaler was provided (e.g. this is test data)
+    elif scaler_to_use is not None:
+        data_array = scaler_to_use.transform(data_array)
+        out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array, labels_array, sequence_length=sequence_length, sequence_stride=1, sampling_rate=1, batch_size=32, shuffle=False, seed=None, start_index=None, end_index=None)
+        return out_dataset, data_array, labels_array
+    
+    # Default, no scaler at all
+    else:
+        out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array, labels_array, sequence_length=sequence_length, sequence_stride=1, sampling_rate=1, batch_size=32, shuffle=False, seed=None, start_index=None, end_index=None)
+        return out_dataset, data_array, labels_array
 
-#     return out_dataset, data_array, labels_array
+#%% FUNCTION - SCALES SKYWALK DATA BY DIVIDING BY POWER ARRAY ('skywalk_powerscaled')
+# TODO: Fix bug - the power can switch after the first half of the channels have gone, but not the second!!!
+# TODO: (cont.) there's currently a 50% chance any single sample gets incorrectly scaled
+# TODO: fix another bug because the backscatter channels have more power inherently, don't want to scale the neighbors back too far
+def powerScaleSkywalkData(sessions_list):
+    for session in sessions_list:
+        # First generate array equal in length to session['skywalk'] that has the power at each timepoint
+        power_copy = session['skywalk_power'].copy()
+        # Copy power at Ch16 -> Ch17 and Ch18 -> Ch19
+        # Ch17 and Ch19 currently just use 16 and 18 power level in firmware (shared timeslot LED)
+        power_copy[17], power_copy[19] = power_copy[16], power_copy[18]
+        power_copy2 = power_copy.drop(columns=[0,1,2,3,4,5,6])
+        power_copy2.columns += 13
+        extended_power_array = pd.concat([power_copy, power_copy2], axis=1)
+        temp_power_array = pd.DataFrame(np.zeros(session['skywalk'].shape),index=session['skywalk'].index)
+        first_power_update = True
+        for ind in extended_power_array.index:
+            if first_power_update:
+                temp_power_array[temp_power_array.index <= ind] = np.array(extended_power_array.loc[ind])
+                first_power_update = False
+            temp_power_array[temp_power_array.index > ind] = np.array(extended_power_array.loc[ind])
+        temp_power_array.columns = session['skywalk'].columns
+        session['skywalk_powerscaled'] = session['skywalk'].div(temp_power_array)
 
-# FUNCTION - Take array and subtract the mean of the past n samples from each channel
+#%% FUNCTION - Take array and subtract the mean of the past n samples from each channel
 # Returns a mean-subtracted copy of the array with n fewer rows
 def takeMeanDiff(data, n):
   new = data.copy()
@@ -318,17 +387,19 @@ def takeMeanDiff(data, n):
     new[i] = data[i] - np.mean(data[i-n:i], axis=0)
   return new[n:]
 
-# TODO make this work for the power divided skywalk data instead
-# FUNCTION - does mean-subtraction of skywalk data in-place for all sessions in a list of sessions
-def meanSubtractSkywalkData(sessions_list, mean_width):
+# FUNCTION - does mean-subtraction of skywalk data for all sessions in a list of sessions
+def meanSubtractSkywalkData(sessions_list, mean_width, power_scale=False):
     new_sessions_list = [None]*len(sessions_list)
     for i in range(len(sessions_list)):
         new_sessions_list[i] = sessions_list[i].copy()
-        new_sessions_list[i]['skywalk'] = pd.DataFrame(takeMeanDiff(np.array(sessions_list[i]['skywalk']), mean_width),columns = sessions_list[i]['skywalk'].columns, index = sessions_list[i]['skywalk'].index[mean_width:])
+        if power_scale:
+            new_sessions_list[i]['skywalk'] = pd.DataFrame(takeMeanDiff(np.array(sessions_list[i]['skywalk_powerscaled']), mean_width),columns = sessions_list[i]['skywalk_powerscaled'].columns, index = sessions_list[i]['skywalk_powerscaled'].index[mean_width:])
+        else:
+            new_sessions_list[i]['skywalk'] = pd.DataFrame(takeMeanDiff(np.array(sessions_list[i]['skywalk']), mean_width),columns = sessions_list[i]['skywalk'].columns, index = sessions_list[i]['skywalk'].index[mean_width:])
     return new_sessions_list
 
 #%% FUNCTIONS - v0 CNN model
-def applyTimeseriesCNN_v0(trainDataset, testDataset, epochs, kernel_size, regrate, verbose=1):
+def applyTimeseriesCNN_v0(trainDataset, epochs, kernel_size, regrate, verbose=1):
     
     for data, labels in trainDataset.take(1):  # only take first element of dataset
       numpy_data = data.numpy()
@@ -353,12 +424,7 @@ def applyTimeseriesCNN_v0(trainDataset, testDataset, epochs, kernel_size, regrat
     # print(model.summary())
     # print(model.evaluate(trainx, trainy))
     
-    predictions_test = model.predict(testDataset)
-    pred_array = np.array(predictions_test)
-    predictions = np.zeros(pred_array.shape[0])
-    for i in range(pred_array.shape[0]):
-        predictions[i] = np.argmax(pred_array[i,:])
-    return model, predictions
+    return model
 
 #%% FUNCTIONS - v1 CNN model
 def applyTimeseriesCNN_v1(trainDataset, testDataset, epochs, kernel_size, regrate, verbose=1):
@@ -371,7 +437,7 @@ def applyTimeseriesCNN_v1(trainDataset, testDataset, epochs, kernel_size, regrat
     model = Sequential()
     # 1D convolution across time
     model.add(Conv1D(filters=64, kernel_size=kernel_size, activation='relu',input_shape=(sequence_length,n_features)))
-    model.add(Conv1D(filters=12, kernel_size=3, activation='relu'))
+    model.add(Conv1D(filters=24, kernel_size=kernel_size, activation='relu'))
     model.add(MaxPooling1D(pool_size=2))
     model.add(BatchNormalization())
     model.add(Flatten())
@@ -393,6 +459,15 @@ def applyTimeseriesCNN_v1(trainDataset, testDataset, epochs, kernel_size, regrat
     for i in range(pred_array.shape[0]):
         predictions[i] = np.argmax(pred_array[i,:])
     return model, predictions
+
+# FUNCTION - GET PREDICTIONS
+def getPredictions(model, test_dataset):
+    predictions_test = model.predict(test_dataset)
+    pred_array = np.array(predictions_test)
+    predictions = np.zeros(pred_array.shape[0])
+    for i in range(pred_array.shape[0]):
+        predictions[i] = np.argmax(pred_array[i,:])
+    return predictions
 
 #%% FUNCTION - CHECK ACCURACY OF THE MODEL (currently unused, defaulting to applyFlagPulses)
 # TODO needs to output RMS and max onset timing error, RMS and max offset timing error
@@ -524,8 +599,7 @@ def applyFlagPulses(predicted, actual):
     return correct,false_pos,false_neg, caught_vec, true_on_vec, pred_on_vec
 
 
-#%%
-# FUNCTION - GET INDICES OF RISING EDGES FOR DATAFRAME
+#%% FUNCTION - GET INDICES OF RISING EDGES FOR DATAFRAME
 # contact_dataframe = train_sessions_list[0]['contact']
 # which_column = 0
 # rising_edge_timestamps, rising_edge_indices = getRisingEdgeIndices(contact_dataframe, which_column)
@@ -589,6 +663,34 @@ def getFallingEdgeIndices(input_df, which_column):
         falling_edge_df = falling * np.insert(df, 0, 0)
         falling_edge_indices = np.where(falling_edge_df == True)[0]
         return falling_edge_indices
+    
+#%% PLOT PREDICTED VS. ACTUAL DATA / LABELS
+# plotPredictions(predictions, test_labels_array, test_data_array)
+def plotPredictions(predictions, labels_array, data_array):
+    pred_rising_edges = getRisingEdgeIndices(predictions, which_column=None)
+    pred_falling_edges = getFallingEdgeIndices(predictions, which_column=None)
+    for i in range(len(pred_rising_edges)):
+        plt.axvline(pred_rising_edges[i], color="red", ymin=.8, ymax=1, alpha=0.1)
+        plt.axvspan(pred_rising_edges[i], pred_falling_edges[i], ymin=.8, ymax=1, facecolor='r', alpha=0.3, label =  "_"*i + "prediction")
+        plt.axvline(pred_falling_edges[i], color="red", ymin=.8, ymax=1, alpha=0.1)
+    
+    real_rising_edges = getRisingEdgeIndices(labels_array, which_column=None)
+    real_falling_edges = getFallingEdgeIndices(labels_array, which_column=None)
+    for i in range(len(real_rising_edges)):
+        plt.axvline(real_rising_edges[i], color="blue", ymin=0, ymax=.8, alpha=0.1)
+        plt.axvspan(real_rising_edges[i], real_falling_edges[i], ymin=0, ymax=.8, facecolor='b', alpha=0.3, label =  "_"*i + "actual")
+        plt.axvline(real_falling_edges[i], color="blue", ymin=0, ymax=.8, alpha=0.1)
+    
+    plt.plot(data_array)
+    plt.legend()
+    return
+
+#%% FUNCTION - RANDOMLY CHOOSE N SAMPLES FROM SESSIONS
+# test_sessions, train_sessions = sampleNSessions(sessions_list, n_sessions)
+def sampleNSessions(sessions_list, n_sessions):
+    random.seed()
+    temp = random.sample(sessions_list, len(sessions_list))
+    return temp[:n_sessions], temp[n_sessions:]
 
 
 #%% DATA IMPORTING, PROCESSING, AND ML PIPELINE
@@ -607,8 +709,6 @@ tylerchen = User('tylerchen')
 for filepath in allFiles:
     tylerchen.appendTrial(Trial(dirpath+filepath))
 
-#%% SELECT SESSIONS AND TRAIN MODEL / PREDICT
-
 # Define subsets of sessions
 simple_sessions_list = tylerchen.getSessions(tylerchen.getTrials(date='2022-03-06', trial_type='guitar_hero_tap_hold', notes='consistent hand position, no noise'))
 drag_sessions_list = tylerchen.getSessions(tylerchen.getTrials(date='2022-03-06', trial_type='guitar_hero_tap_hold', notes='unidirectional motion of hand during hold events, emulating click + drag'))
@@ -619,67 +719,110 @@ allmixed_sessions_list = tylerchen.getSessions(tylerchen.getTrials(date='2022-03
 allmixed_background_sessions_list = tylerchen.getSessions(tylerchen.getTrials(date='2022-03-06', trial_type='guitar_hero_tap_hold', notes='guitarhero with rotation, motion, fingers open/close, interspersed with idle motion, picking up objects, resting hand'))
 allmixed_background_sessions_day2_list = tylerchen.getSessions(tylerchen.getTrials(date='2022-03-07', trial_type='guitar_hero_tap_hold', notes='guitarhero with rotation, motion, fingers open/close, interspersed with idle motion, picking up objects, resting hand'))
 background_sessions_list = tylerchen.getSessions(tylerchen.getTrials(date='2022-03-06', trial_type='passive_motion_no_task'))
+background_phone_sessions_list = tylerchen.getSessions(tylerchen.getTrials(trial_type = 'passive_motion_using_phone'))
+for i in range(len(background_sessions_list)):
+    background_sessions_list[i]['contact'] = pd.DataFrame(np.zeros(background_sessions_list[i]['skywalk'].shape[0]), index = background_sessions_list[i]['skywalk'].index)
+for i in range(len(background_phone_sessions_list)):
+    background_phone_sessions_list[i]['contact'] = pd.DataFrame(np.zeros(background_phone_sessions_list[i]['skywalk'].shape[0]), index = background_phone_sessions_list[i]['skywalk'].index)
 
-init_train_sessions_list = drag_sessions_list[0:5]
-init_test_sessions_list = drag_sessions_list[5:7]
+all_day_one_sessions_list =  background_phone_sessions_list+background_sessions_list+allmixed_background_sessions_list+allmixed_sessions_list+open_close_sessions_list+ flexion_extension_sessions_list+rotation_sessions_list+drag_sessions_list+simple_sessions_list
 
-# TODO: scale skywalk data by the LED power
 
-# Subtract mean from skywalk data (makes a copy)
-train_sessions_list = meanSubtractSkywalkData(init_train_sessions_list, 128)
-test_sessions_list = meanSubtractSkywalkData(init_test_sessions_list, 128)
+#%% Things to try - 
+# expand events
+# different training subsets
+# adding accel/gyro
+# adding gravity direction (that's just quaternion i guess)
+# PCA project the dataset into 3d and plot the tap vs. non tap? - might need to fourier transform first or smth mmm
+# fourier transform each 11 sample segment - compare non-tap vs. tap?
+# Note - power scaling seems to dramatically inflate the importance of the backscatter channels (ofc) cuz their power is lower. fix this by making a correction factor or smth
+#%% SELECT SESSIONS AND TRAIN MODEL / PREDICT
+means = [128]
+num_repeats = 10
+model_list = [None]*num_repeats
+n_test = 5
+for mean in means:
+    full_correct, full_false_pos, full_false_neg = np.zeros([n_test, num_repeats]),np.zeros([n_test, num_repeats]),np.zeros([n_test, num_repeats])
+    best_correct, best_false_pos, best_false_neg, best_index = [0]*n_test, [1000]*n_test, [1000]*n_test, [0]*n_test
+    for count in range(num_repeats):
+        
+        # Create lists of training and testing sessions by sampling from the sessions lists
+        simple_test_sessions, simple_train_sessions = sampleNSessions(simple_sessions_list, 5)
+        drag_test_sessions, drag_train_sessions = sampleNSessions(drag_sessions_list, 2)
+        rotation_test_sessions, rotation_train_sessions = sampleNSessions(rotation_sessions_list, 2)
+        flexion_extension_test_sessions, flexion_extension_train_sessions = sampleNSessions(flexion_extension_sessions_list, 1)
+        openclose_test_sessions, openclose_train_sessions = sampleNSessions(open_close_sessions_list, 1)
+        
+        # Concatenate training sessions together, append test sessions into a metalist to get trial-type-specific metrics
+        train_sessions_list = rotation_train_sessions+openclose_train_sessions+drag_test_sessions
+        test_sessions_metalist = [simple_test_sessions,drag_test_sessions,rotation_test_sessions,flexion_extension_test_sessions,openclose_test_sessions]
+        if n_test != len(test_sessions_metalist): raise ValueError("n_test (", n_test,") must equal length of test_sessions_metalist (", len(test_sessions_metalist),")")
+        test_descriptions = ['simple', 'drag', 'rotation', 'flexion','open_close']
 
-# Convert data into timeserie (only using Skywalk data currently)
-train_dataset, train_data_array, train_labels_array = timeseriesFromSessionsList(train_sessions_list, sequence_length=11)
-test_dataset, test_data_array, test_labels_array = timeseriesFromSessionsList(test_sessions_list, sequence_length=11)
+        # Shuffle training list
+        random.seed(10)
+        random.shuffle(train_sessions_list)
+        
+        # 1. Scale skywalk data by the LED power (adds new column 'skywalk_powerscaled')
+        power_scale = False # leave as false until issues are fixed
+        if (power_scale):
+            powerScaleSkywalkData(train_sessions_list)
+            for i in range(len(test_sessions_metalist)): powerScaleSkywalkData(test_sessions_metalist[i])
+            
+        # 2. Resample IMU data (makes a copy)
+        train_sessions_list = resampleIMUData(train_sessions_list)
+        for i in range(len(test_sessions_metalist)): test_sessions_metalist[i] = resampleIMUData(test_sessions_metalist[i])
+        
+        # X. Take derivative of accel_data (if relevant)
+            
+        # 3. Subtract mean from skywalk data (makes a copy)
+        train_sessions_list = meanSubtractSkywalkData(train_sessions_list, mean, power_scale)
+        for i in range(len(test_sessions_metalist)): test_sessions_metalist[i] = meanSubtractSkywalkData(test_sessions_metalist[i], mean, power_scale)
+        
+        # 4. Correct IMU indices after mean subtraction happened
+        train_sessions_list = correctIMUIndices(train_sessions_list, mean)
+        for i in range(len(test_sessions_metalist)): test_sessions_metalist[i] = correctIMUIndices(test_sessions_metalist[i], mean)
 
-full_correct, full_false_pos, full_false_neg = 0, 0, 0
-best_correct, best_false_pos, best_false_neg = 0, 1000, 1000
-num_repeats = 1
-
-for i in range(num_repeats):
-    model, predictions = applyTimeseriesCNN_v1(train_dataset, test_dataset, epochs=5, kernel_size=5, regrate=0.1, verbose=0)
-    correct,false_pos,false_neg, caught_vec, true_on_vec, pred_on_vec = applyFlagPulses(predictions, test_labels_array)
-    if (false_pos+false_neg) < (best_false_pos+best_false_neg):
-        best_correct, best_false_pos, best_false_neg = correct, false_pos, false_neg,
-    full_correct += correct
-    full_false_pos += false_pos
-    full_false_neg += false_neg
-print('MEAN: Correct:',"{:.2%}".format(full_correct/(full_correct+full_false_neg)), 'FalsePos:', "{:.2%}".format(full_false_pos/(full_correct+full_false_neg)), 'FalseNeg:', "{:.2%}".format(full_false_neg/(full_correct+full_false_neg)))
-print('BEST: Correct:',"{:.2%}".format(best_correct/(best_correct+best_false_neg)), 'FalsePos:', "{:.2%}".format(best_false_pos/(best_correct+best_false_neg)), 'FalseNeg:', "{:.2%}".format(best_false_neg/(best_correct+best_false_neg)))
+        scaled = False
+        sequence_length = 11
+        # IMU_data = ['accelerometer', 'gyroscope']
+        IMU_data = None
+        if not scaled:
+            # Convert data into timeseries
+            train_dataset, train_data_array, train_labels_array = timeseriesFromSessionsList(train_sessions_list, sequence_length, IMU_data = IMU_data)
+            test_dataset, test_data_array, test_labels_array = [None]*n_test, [None]*n_test, [None]*n_test
+            for i in range(n_test):
+                test_dataset[i], test_data_array[i], test_labels_array[i] = timeseriesFromSessionsList(test_sessions_metalist[i], sequence_length, IMU_data = IMU_data)
+        
+        else:
+            train_dataset, train_data_array, train_labels_array, scaler = timeseriesFromSessionsList(train_sessions_list, sequence_length, fit_scaler = True, IMU_data = IMU_data)
+            for i in range(n_test):
+                test_dataset[i], test_data_array[i], test_labels_array[i] = timeseriesFromSessionsList(test_sessions_metalist[i], sequence_length, scaler_to_use = scaler, IMU_data = IMU_data)
+            
+        model_list[count] = applyTimeseriesCNN_v0(train_dataset, epochs=7, kernel_size=5, regrate=0.1, verbose=0)
+        
+        for j in range(len(test_sessions_metalist)):
+            predictions = getPredictions(model_list[count], test_dataset[j])
+            correct,false_pos,false_neg, caught_vec, true_on_vec, pred_on_vec = applyFlagPulses(predictions, test_labels_array[j])
+            if (correct - false_pos) > (best_correct[j] - best_false_pos[j]):
+                best_correct[j], best_false_pos[j], best_false_neg[j], best_index[j] = correct, false_pos, false_neg, count
+            full_correct[j][count] = correct
+            full_false_pos[j][count] = false_pos
+            full_false_neg[j][count] = false_neg
+            
+    for j in range(n_test):
+        print(test_descriptions[j])
+        print('MEAN: Correct:',"{:.2%}".format(sum(full_correct[j])/(sum(full_correct[j])+sum(full_false_neg[j]))), 'FalsePos:', "{:.2%}".format(sum(full_false_pos[j])/(sum(full_correct[j])+sum(full_false_neg[j]))), 'FalseNeg:', "{:.2%}".format(sum(full_false_neg[j])/(sum(full_correct[j])+sum(full_false_neg[j]))))
+        print('BEST: Index:', best_index[j], ' Correct:',"{:.2%}".format(best_correct[j]/(best_correct[j]+best_false_neg[j])), 'FalsePos:', "{:.2%}".format(best_false_pos[j]/(best_correct[j]+best_false_neg[j])), 'FalseNeg:', "{:.2%}".format(best_false_neg[j]/(best_correct[j]+best_false_neg[j])))
 
 #%% SAVE MODEL AND PLOT RESULTS
-# model.save("../models/2022_03_08_1DCNN_HL2_v1")
+j = 4
+predictions = getPredictions(model_list[6], test_dataset[j])
+plotPredictions(predictions, test_labels_array[j], test_data_array[j])
+model_list[6].save("../models/2022_03_14_TimeseriesCNN_HL2_v0")
 
-pred_rising_edges = getRisingEdgeIndices(predictions, which_column=None)
-pred_falling_edges = getFallingEdgeIndices(predictions, which_column=None)
-for i in range(len(pred_rising_edges)):
-    plt.axvline(pred_rising_edges[i], color="red", ymin=.8, ymax=1, alpha=0.1)
-    plt.axvspan(pred_rising_edges[i], pred_falling_edges[i], ymin=.8, ymax=1, facecolor='r', alpha=0.3, label =  "_"*i + "prediction")
-    plt.axvline(pred_falling_edges[i], color="red", ymin=.8, ymax=1, alpha=0.1)
 
-real_rising_edges = getRisingEdgeIndices(test_labels_array, which_column=None)
-real_falling_edges = getFallingEdgeIndices(test_labels_array, which_column=None)
-for i in range(len(real_rising_edges)):
-    plt.axvline(real_rising_edges[i], color="blue", ymin=0, ymax=.8, alpha=0.1)
-    plt.axvspan(real_rising_edges[i], real_falling_edges[i], ymin=0, ymax=.8, facecolor='b', alpha=0.3, label =  "_"*i + "actual")
-    plt.axvline(real_falling_edges[i], color="blue", ymin=0, ymax=.8, alpha=0.1)
+#%% WITHIN-SESSION MODEL
 
-plt.plot(test_data_array)
-plt.legend()
 
-#%% GAH FINISH THIS LATER
-# session = trials_list[5].session_data[1]
-
-# power_copy = session['skywalk_power'].copy()
-# power_copy.drop(columns=[0,1,2,3,4,5,6], inplace = True)
-# power_copy.columns += 13
-# extended_power_array = pd.concat([session['skywalk_power'], power_copy], axis=1)
-# temp_power_array = pd.DataFrame(np.zeros(session['skywalk'].shape),index=session['skywalk'].index)
-# for ind in extended_power_array.index:
-#     temp_power_array.loc[[ind]] = np.array(extended_power_array.loc[[ind]])
-    
-# temp_power_array[temp_power_array.index > 'ind']
-contact_dataframe = train_sessions_list[0]['contact']
-rising_edge_timestamps, rising_edge_indices = getRisingEdgeIndices(contact_dataframe, 0)
-falling_edge_timestamps, falling_edge_indices = getFallingEdgeIndices(contact_dataframe, 0)
+openclose_test_sessions, openclose_train_sessions = sampleNSessions(open_close_sessions_list, 1)
