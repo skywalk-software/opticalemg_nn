@@ -50,6 +50,12 @@ def timeseries_from_sessions_list(sessions_list, seq_length, fit_scaler=False, s
                 partial_data_array = np.append(partial_data_array, np.array(session[data_stream]), axis=1)
         data_array = np.append(data_array, np.array(session['skywalk']), axis=0)
 
+    # Shifting indexing by seq_length allows for prediction of the next timestep's value
+    # TODO shifting should occur on a per-array basis I believe -
+    #  this shifting causes more issues at border between sessions
+    data_array = data_array[:-seq_length]
+    labels_array = labels_array[seq_length:]
+
     # if fitting a new scaler
     if fit_scaler:
         if scaler_to_use is not None:
@@ -57,7 +63,8 @@ def timeseries_from_sessions_list(sessions_list, seq_length, fit_scaler=False, s
                 "Cannot assign scaler and fit a new one! Either change fit_scaler to False or remove scaler_to_use.")
         scaler = preprocessing.StandardScaler().fit(data_array)
         data_array = scaler.transform(data_array)
-        out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array, labels_array,
+        out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array,
+                                                                           labels_array,
                                                                            sequence_length=seq_length,
                                                                            sequence_stride=1, sampling_rate=1,
                                                                            batch_size=32, shuffle=False, seed=None,
@@ -67,7 +74,8 @@ def timeseries_from_sessions_list(sessions_list, seq_length, fit_scaler=False, s
     # If scaler was provided (e.g. this is test data)
     elif scaler_to_use is not None:
         data_array = scaler_to_use.transform(data_array)
-        out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array, labels_array,
+        out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array,
+                                                                           labels_array,
                                                                            sequence_length=seq_length,
                                                                            sequence_stride=1, sampling_rate=1,
                                                                            batch_size=32, shuffle=False, seed=None,
@@ -76,7 +84,8 @@ def timeseries_from_sessions_list(sessions_list, seq_length, fit_scaler=False, s
 
     # Default, no scaler at all
     else:
-        out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array, labels_array,
+        out_dataset = tf.keras.preprocessing.timeseries_dataset_from_array(data_array,
+                                                                           labels_array,
                                                                            sequence_length=seq_length,
                                                                            sequence_stride=1, sampling_rate=1,
                                                                            batch_size=32, shuffle=False, seed=None,
@@ -110,6 +119,35 @@ def apply_timeseries_cnn_v0(train_dataset_internal, epochs, kernel_size, verbose
 
     return model
 
+
+# %% FUNCTIONS - v1 CNN model
+def apply_timeseries_cnn_v1(train_dataset_internal, epochs, kernel_size, verbose=1):
+    for data, labels in train_dataset_internal.take(1):  # only take first element of dataset
+        numpy_data = data.numpy()
+        numpy_labels = labels.numpy()
+    batch_size, seq_length, n_features = numpy_data.shape[0], numpy_data.shape[1], numpy_data.shape[2]
+
+    model = Sequential()
+    # 1D convolution across time
+    model.add(Conv1D(filters=48, kernel_size=kernel_size, activation='relu', input_shape=(seq_length, n_features)))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(BatchNormalization())
+    model.add(Flatten())
+    model.add(Dense(20, activation='relu'))
+    model.add(Dense(20, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(2, activation='softmax'))
+
+    # Use categorical crossentropy for one-hot encoded
+    # Use sparse categorical crossentropy for 1D integer encoded
+    model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+    model.fit(train_dataset_internal, epochs=epochs, batch_size=batch_size, verbose=verbose)
+
+    # print(model.summary())
+    # print(model.evaluate(trainx, trainy))
+
+    return model
 
 #%% FUNCTION - GET PREDICTIONS
 def get_predictions(model, test_dataset_for_pred):

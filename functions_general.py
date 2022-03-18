@@ -47,6 +47,8 @@ def get_rising_edge_indices(input_df, which_column):
         rising_edge_df = rising * np.append(df, 0)
         rising_edge_indices = np.where(rising_edge_df)[0]
         return rising_edge_indices
+    else:
+        raise TypeError("input_df must be of type np.ndarray or pd.DataFrame")
 
 
 # FUNCTION - GET INDICES OF FALLING EDGES FOR DATAFRAME

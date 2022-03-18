@@ -170,5 +170,5 @@ def plot_predictions(pred, labels_array, data_array):
         plt.axvline(real_falling_edges[i_e], color="blue", ymin=0, ymax=.8, alpha=0.1)
 
     plt.plot(data_array)
-    plt.legend()
+    plt.legend(loc='upper right')
     return

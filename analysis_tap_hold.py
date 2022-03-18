@@ -30,6 +30,7 @@ from functions_preprocessing import mean_subtract_skywalk_data
 
 from functions_ml import timeseries_from_sessions_list
 from functions_ml import apply_timeseries_cnn_v0
+from functions_ml import apply_timeseries_cnn_v1
 from functions_ml import get_predictions
 
 from functions_postprocessing import plot_predictions
@@ -189,12 +190,12 @@ all_day_one_sessions_list = background_phone_sessions_list + background_sessions
 means = [128]
 num_repeats = 1
 model_list = [None] * num_repeats
-n_test = 5
+n_test = 6
 for mean in means:
     full_correct, full_false_pos, full_false_neg = np.zeros([n_test, num_repeats]), np.zeros(
         [n_test, num_repeats]), np.zeros([n_test, num_repeats])
-    best_correct, best_false_pos, best_false_neg, best_index = [0] * n_test, [1000] * n_test, [1000] * n_test, [
-        0] * n_test
+    best_correct, best_false_pos, best_false_neg, best_index = [0] * n_test, [1000] * n_test, [1000] * n_test, \
+                                                               [0] * n_test
     for count in range(num_repeats):
 
         # Create lists of training and testing sessions by sampling from the sessions lists
@@ -203,23 +204,26 @@ for mean in means:
         rotation_test_sessions, rotation_train_sessions = sample_n_sessions(rotation_sessions_list, 2)
         flexion_extension_test_sessions, flexion_extension_train_sessions = sample_n_sessions(
             flexion_extension_sessions_list, 1)
+        allmixed_test_sessions, allmixed_train_sessions = sample_n_sessions(
+            allmixed_sessions_list, 1)
+
         open_close_test_sessions, open_close_train_sessions = sample_n_sessions(open_close_sessions_list, 1)
 
         # Concatenate training sessions, append test sessions into a metalist to get trial-type-specific metrics
-        train_sessions_list = rotation_train_sessions + open_close_train_sessions + drag_test_sessions
+        train_sessions_list = simple_train_sessions + drag_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions + allmixed_background_sessions_list
         test_sessions_metalist = [simple_test_sessions, drag_test_sessions, rotation_test_sessions,
-                                  flexion_extension_test_sessions, open_close_test_sessions]
-        if n_test != len(test_sessions_metalist): raise ValueError("n_test (", n_test,
-                                                                   ") must equal length of test_sessions_metalist (",
-                                                                   len(test_sessions_metalist), ")")
-        test_descriptions = ['simple', 'drag', 'rotation', 'flexion', 'open_close']
+                                  flexion_extension_test_sessions, open_close_test_sessions, allmixed_test_sessions]
+        if n_test != len(test_sessions_metalist):
+            raise ValueError("n_test (", n_test, ") must equal length of test_sessions_metalist (",
+                             len(test_sessions_metalist), ")")
+        test_descriptions = ['simple', 'drag', 'rotation', 'flexion', 'open_close', 'allmixed']
 
         # Shuffle training list
         random.seed(10)
         random.shuffle(train_sessions_list)
 
         # 1. Scale skywalk data by the LED power (adds new column 'skywalk_powerscaled')
-        power_scale = False  # leave as false until issues are fixed
+        power_scale = True  # leave as false until issues are fixed
         if power_scale:
             power_scale_skywalk_data(train_sessions_list)
             for i in range(len(test_sessions_metalist)):
@@ -242,16 +246,15 @@ for mean in means:
         for i in range(len(test_sessions_metalist)):
             test_sessions_metalist[i] = correct_imu_indices(test_sessions_metalist[i], mean)
 
-        scaled = False
+        scaled = True
         sequence_length = 11
         # IMU_data = ['accelerometer', 'gyroscope']
         IMU_data = None
         test_dataset, test_data_array, test_labels_array = [None] * n_test, [None] * n_test, [None] * n_test
         if not scaled:
             # Convert data into timeseries
-            train_dataset, train_data_array, train_labels_array = timeseries_from_sessions_list(train_sessions_list,
-                                                                                                sequence_length,
-                                                                                                imu_data=IMU_data)
+            train_dataset, train_data_array, train_labels_array = \
+                timeseries_from_sessions_list(train_sessions_list, sequence_length, imu_data=IMU_data)
             for i in range(n_test):
                 test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                     test_sessions_metalist[i], sequence_length, imu_data=IMU_data)
@@ -264,18 +267,26 @@ for mean in means:
                 test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                     test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
-        model_list[count] = apply_timeseries_cnn_v0(train_dataset, epochs=7, kernel_size=5, verbose=0)
+        model_list[count] = apply_timeseries_cnn_v1(train_dataset, epochs=7, kernel_size=5, verbose=0)
 
         for j in range(len(test_sessions_metalist)):
             predictions = get_predictions(model_list[count], test_dataset[j])
             correct, false_pos, false_neg, caught_vec, true_on_vec, pred_on_vec = \
                 apply_flag_pulses(predictions, test_labels_array[j])
             if (correct - false_pos) > (best_correct[j] - best_false_pos[j]):
-                best_correct[j], best_false_pos[j], best_false_neg[j], best_index[
-                    j] = correct, false_pos, false_neg, count
+                best_correct[j], best_false_pos[j], best_false_neg[j], best_index[j] = \
+                    correct, false_pos, false_neg, count
             full_correct[j][count] = correct
             full_false_pos[j][count] = false_pos
             full_false_neg[j][count] = false_neg
+
+            print(test_descriptions[j])
+            print('MEAN: Correct:',
+                  "{:.2%}".format(correct / (correct + false_neg)),
+                  'FalsePos:',
+                  "{:.2%}".format(false_pos / (correct + false_neg)),
+                  'FalseNeg:',
+                  "{:.2%}".format(false_neg / (correct + false_neg)))
 
     for j in range(n_test):
         print(test_descriptions[j])
@@ -287,8 +298,89 @@ for mean in means:
               "{:.2%}".format(best_false_pos[j] / (best_correct[j] + best_false_neg[j])), 'FalseNeg:',
               "{:.2%}".format(best_false_neg[j] / (best_correct[j] + best_false_neg[j])))
 
+
+# %% EXAMINE DATA
+all_sessions = tylerchen.get_sessions(tylerchen.get_trials())
+
+meandf = pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
+stddf =  pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
+peakdf = pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
+i = 0
+for session in all_sessions:
+    meandf.loc[i] = session['skywalk'].describe().loc['mean']
+    stddf.loc[i] =  session['skywalk'].describe().loc['std']
+    peakdf.loc[i] = session['skywalk'].describe().loc['max']-session['skywalk'].describe().loc['min']
+    i += 1
+    
+# %% EXAMINE DATA
+# colorlist = ['b'] * 8 + ['orange'] * 25
+# alphalist = [1] * 8 + [0.1] * 25
+# for i in range(0, stddf.shape[1]):
+#     plt.plot(stddf.iloc[:,i], alpha = alphalist[i])
+# plt.title("StdDev")
+# plt.legend(stddf.columns)
+
+# session_descriptions = []
+# all_trials = tylerchen.get_trials()
+# for i in range(len(all_trials)):
+#     if all_trials[i].trial_type == 'guitar_hero_tap_hold':
+#         session_descriptions = session_descriptions + [all_trials[i].notes] * all_trials[i].num_sessions
+#     else:
+#         session_descriptions = session_descriptions + [all_trials[i].trial_type] * all_trials[i].num_sessions
+# print(session_descriptions)
+
+fig, axs = plt.subplots(3)
+axs[0].bar(range(20), np.mean(np.array(meandf)[:,0:20], axis=0))
+axs[0].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(meandf)[:,20:], axis=0).tolist(), alpha = 0.5)
+axs[0].set_title('Mean')
+axs[1].bar(range(20), np.mean(np.array(stddf)[:,0:20], axis=0))
+axs[1].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(stddf)[:,20:], axis=0).tolist(), alpha = 0.5)
+axs[1].set_title('StdDev')
+axs[2].bar(range(20), np.mean(np.array(peakdf)[:,0:20], axis=0))
+axs[2].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(peakdf)[:,20:], axis=0).tolist(), alpha = 0.5)
+axs[2].set_title('Peakdiff (max - min)')
+# fig.xlabel('channel')
+
+
+
 # %% SAVE MODEL AND PLOT RESULTS
-j = 4
-predictions = get_predictions(model_list[6], test_dataset[j])
-plot_predictions(predictions, test_labels_array[j], test_data_array[j])
-# model_list[6].save("../models/2022_03_14_TimeseriesCNN_HL2_v0")
+i = 0
+j = 5
+# predictions = get_predictions(model_list[i], test_dataset[j])
+# plot_predictions(predictions, test_labels_array[j], test_data_array[j])
+
+predictions = get_predictions(model_list[i], train_dataset)
+plot_predictions(predictions, train_labels_array, train_data_array)
+model_list[0].save("../models/2022_03_17_TimeseriesCNN_HL2_v1")
+
+
+
+# %% Random stuff
+# plt.plot(test_sessions_metalist[0][0]['skywalk'].iloc[:-11])
+# plt.plot(test_sessions_metalist[0][0]['contact'].iloc[11:][0]*15000)
+i = 0
+for batch in train_dataset:
+    inputs, targets = batch
+    # if i < 10:
+    #     i += 1
+    #     continue
+    if targets[31] != 1:
+        continue
+    plot_predictions(np.array([0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]), np.array(targets[2:13]), np.array(inputs[2]))
+    # fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2)
+    # ax1.plot(inputs[17])
+    # ax2.plot(inputs[18])
+    # ax3.plot(inputs[19])
+    # ax4.plot(inputs[20])
+    # ax5.plot(inputs[21])
+    # ax6.plot(inputs[22])
+    print(targets)
+    break
+
+
+# for data, labels in train_dataset.take(1):  # only take first element of dataset
+#     numpy_data = data.numpy()
+#     numpy_labels = labels.numpy()
+# batch_size, sequence_length, n_features = numpy_data.shape[0], numpy_data.shape[1], numpy_data.shape[2]
+
+# %% Random stuff
