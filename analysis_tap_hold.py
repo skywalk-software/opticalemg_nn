@@ -177,6 +177,17 @@ all_day_one_sessions_list = background_phone_sessions_list + background_sessions
                             flexion_extension_sessions_list + rotation_sessions_list + drag_sessions_list + \
                             simple_sessions_list
 
+# Collect mean and stddev of all sessions           
+all_sessions = tylerchen.get_sessions(tylerchen.get_trials())
+
+meandf = pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
+stddf =  pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
+i = 0
+for session in all_sessions:
+    meandf.loc[i] = session['skywalk'].describe().loc['mean']
+    stddf.loc[i] =  session['skywalk'].describe().loc['std']
+    i += 1
+    
 # %% Things to try -
 # expand events
 # different training subsets
@@ -188,7 +199,7 @@ all_day_one_sessions_list = background_phone_sessions_list + background_sessions
 #        cuz their power is lower. fix this by making a correction factor or smth
 # %% SELECT SESSIONS AND TRAIN MODEL / PREDICT
 means = [128]
-num_repeats = 1
+num_repeats = 10
 model_list = [None] * num_repeats
 n_test = 6
 for mean in means:
@@ -206,11 +217,10 @@ for mean in means:
             flexion_extension_sessions_list, 1)
         allmixed_test_sessions, allmixed_train_sessions = sample_n_sessions(
             allmixed_sessions_list, 1)
-
         open_close_test_sessions, open_close_train_sessions = sample_n_sessions(open_close_sessions_list, 1)
 
         # Concatenate training sessions, append test sessions into a metalist to get trial-type-specific metrics
-        train_sessions_list = simple_train_sessions + drag_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions + allmixed_background_sessions_list
+        train_sessions_list = simple_train_sessions + drag_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions + allmixed_background_sessions_list + allmixed_background_sessions_day2_list + background_sessions_list
         test_sessions_metalist = [simple_test_sessions, drag_test_sessions, rotation_test_sessions,
                                   flexion_extension_test_sessions, open_close_test_sessions, allmixed_test_sessions]
         if n_test != len(test_sessions_metalist):
@@ -223,7 +233,7 @@ for mean in means:
         random.shuffle(train_sessions_list)
 
         # 1. Scale skywalk data by the LED power (adds new column 'skywalk_powerscaled')
-        power_scale = True  # leave as false until issues are fixed
+        power_scale = False  # leave as false until issues are fixed
         if power_scale:
             power_scale_skywalk_data(train_sessions_list)
             for i in range(len(test_sessions_metalist)):
@@ -267,7 +277,7 @@ for mean in means:
                 test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                     test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
-        model_list[count] = apply_timeseries_cnn_v1(train_dataset, epochs=7, kernel_size=5, verbose=0)
+        model_list[count] = apply_timeseries_cnn_v1(train_dataset, epochs=7, kernel_size=5, verbose=1)
 
         for j in range(len(test_sessions_metalist)):
             predictions = get_predictions(model_list[count], test_dataset[j])
@@ -299,18 +309,6 @@ for mean in means:
               "{:.2%}".format(best_false_neg[j] / (best_correct[j] + best_false_neg[j])))
 
 
-# %% EXAMINE DATA
-all_sessions = tylerchen.get_sessions(tylerchen.get_trials())
-
-meandf = pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
-stddf =  pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
-peakdf = pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
-i = 0
-for session in all_sessions:
-    meandf.loc[i] = session['skywalk'].describe().loc['mean']
-    stddf.loc[i] =  session['skywalk'].describe().loc['std']
-    peakdf.loc[i] = session['skywalk'].describe().loc['max']-session['skywalk'].describe().loc['min']
-    i += 1
     
 # %% EXAMINE DATA
 # colorlist = ['b'] * 8 + ['orange'] * 25
@@ -351,7 +349,7 @@ j = 5
 
 predictions = get_predictions(model_list[i], train_dataset)
 plot_predictions(predictions, train_labels_array, train_data_array)
-model_list[0].save("../models/2022_03_17_TimeseriesCNN_HL2_v1")
+# model_list[0].save("../models/2022_03_17_TimeseriesCNN_HL2_v1")
 
 
 

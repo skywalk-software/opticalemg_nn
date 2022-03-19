@@ -35,7 +35,7 @@ from tensorflow.keras.utils import to_categorical
 
 # %% FUNCTION - TAKES IN PREPROCESSED LIST OF SESSIONS, OUTPUTS A TIMESERIES DATASET
 # TODO: Eliminate the timeseries issues from just concatenating the sessions together
-# TODO: make this predict the future rather than predicting the middle of the array
+# TODO: Verify that seq_length-1 causes prediction of latest timestep's value
 
 def timeseries_from_sessions_list(sessions_list, seq_length, fit_scaler=False, scaler_to_use=None, imu_data=None):
     labels_array = np.empty((0,))
@@ -50,11 +50,11 @@ def timeseries_from_sessions_list(sessions_list, seq_length, fit_scaler=False, s
                 partial_data_array = np.append(partial_data_array, np.array(session[data_stream]), axis=1)
         data_array = np.append(data_array, np.array(session['skywalk']), axis=0)
 
-    # Shifting indexing by seq_length allows for prediction of the next timestep's value
+    # Shifting indexing by seq_length-1 allows for prediction of the latest timestep's value
     # TODO shifting should occur on a per-array basis I believe -
     #  this shifting causes more issues at border between sessions
-    data_array = data_array[:-seq_length]
-    labels_array = labels_array[seq_length:]
+    data_array = data_array[:-(seq_length-1)]
+    labels_array = labels_array[(seq_length-1):]
 
     # if fitting a new scaler
     if fit_scaler:
@@ -134,7 +134,8 @@ def apply_timeseries_cnn_v1(train_dataset_internal, epochs, kernel_size, verbose
     model.add(BatchNormalization())
     model.add(Flatten())
     model.add(Dense(20, activation='relu'))
-    model.add(Dense(20, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(10, activation='relu'))
     model.add(Dense(10, activation='relu'))
     model.add(Dense(2, activation='softmax'))
 
