@@ -28,9 +28,9 @@ from keras.layers import BatchNormalization
 from keras.layers.convolutional import Conv1D
 from keras.layers.convolutional import MaxPooling1D
 from keras.layers.convolutional import AveragePooling1D
-from tensorflow.python.keras.preprocessing import timeseries_dataset_from_array
+from keras.api._v2.keras.preprocessing import timeseries_dataset_from_array
 from tensorflow.python.keras import layers
-from tensorflow.python.keras.utils import to_categorical
+from keras.api._v2.keras.utils import to_categorical
 
 
 # %% FUNCTION - TAKES IN PREPROCESSED LIST OF SESSIONS, OUTPUTS A TIMESERIES DATASET
