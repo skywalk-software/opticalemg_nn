@@ -2,7 +2,7 @@ import socket
 import socketserver
 import threading
 
-from tensorflow.keras.models import load_model
+from tensorflow.python.keras.models import load_model
 import numpy as np
 import serial
 from queue import Queue
