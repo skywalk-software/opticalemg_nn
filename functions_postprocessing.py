@@ -153,6 +153,8 @@ def apply_flag_pulses(predicted, actual):
 # %% PLOT PREDICTED VS. ACTUAL DATA / LABELS
 # plot_predictions(predictions, test_labels_array, test_data_array)
 def plot_predictions(pred, labels_array, data_array):
+    correct, false_pos, false_neg, caught_vec, true_on_vec, pred_on_vec = \
+        apply_flag_pulses(pred, labels_array)
     pred_rising_edges = get_rising_edge_indices(pred, which_column=None)
     pred_falling_edges = get_falling_edge_indices(pred, which_column=None)
     for i_e in range(len(pred_rising_edges)):
@@ -168,7 +170,13 @@ def plot_predictions(pred, labels_array, data_array):
         plt.axvspan(real_rising_edges[i_e], real_falling_edges[i_e], ymin=0, ymax=.8, facecolor='b', alpha=0.3,
                     label="_" * i_e + "actual")
         plt.axvline(real_falling_edges[i_e], color="blue", ymin=0, ymax=.8, alpha=0.1)
-
+        
     plt.plot(data_array)
+    plt.title('Correct: '+
+          "{:.2%}".format(correct / (correct + false_neg))+
+          '  FalsePos: '+
+          "{:.2%}".format(false_pos / (correct + false_neg))+
+          '  FalseNeg: '+
+          "{:.2%}".format(false_neg / (correct + false_neg)))
     plt.legend(loc='upper right')
     return
