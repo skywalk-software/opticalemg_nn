@@ -1,4 +1,4 @@
-numpy==1.22.3
+numpy~=1.22
 pyserial~=3.5
 pandas~=1.4.1
 h5py~=3.6.0
@@ -8,3 +8,5 @@ tensorflow-macos~=2.8.0; sys_platform == 'darwin'
 keras~=2.8.0
 git+https://github.com/tslearn-team/tslearn.git@6c93071b385a89112b82799ae5870daeca1ab88b #tslearn~=0.5.2
 scikit-learn~=1.0.2
+torch~=1.11.0
+pytorch-lightning~=1.6.0

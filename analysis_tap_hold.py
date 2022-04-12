@@ -5,36 +5,26 @@ Created on Tues Mar  8 13:09:52 2022
 @author: tyler 
 """
 
-# %% Top-Level Imports
-import pandas as pd
-import numpy as np
-import h5py
-import matplotlib.pyplot as plt
 import random
-
-from datetime import datetime
 from os import listdir
 from os.path import isfile, join
+
+import matplotlib.pyplot as plt
+import numpy as np
+# %% Top-Level Imports
+import pandas as pd
 from tslearn.preprocessing import TimeSeriesResampler
 
+from classes import Trial
 # %% Local Imports
 from classes import User
-from classes import Trial
-
-from functions_general import get_rising_edge_indices
-from functions_general import get_falling_edge_indices
 from functions_general import sample_n_sessions
-
-from functions_preprocessing import take_mean_diff
-from functions_preprocessing import mean_subtract_skywalk_data
-
-from functions_ml import timeseries_from_sessions_list
-from functions_ml import apply_timeseries_cnn_v0
-from functions_ml import apply_timeseries_cnn_v1
-from functions_ml import get_predictions
-
-from functions_postprocessing import plot_predictions
+from functions_ml_torch import apply_timeseries_cnn_v1
+from functions_ml_torch import get_predictions
+from functions_ml_torch import timeseries_from_sessions_list
 from functions_postprocessing import apply_flag_pulses
+from functions_postprocessing import plot_predictions
+from functions_preprocessing import mean_subtract_skywalk_data
 
 
 # %% FUNCTION - RESAMPLES ONE TIMESTAMPED ARRAY TO THE SHAPE OF ANOTHER
@@ -264,7 +254,7 @@ for mean in means:
         if not scaled:
             # Convert data into timeseries
             train_dataset, train_data_array, train_labels_array = \
-                timeseries_from_sessions_list(train_sessions_list, sequence_length, imu_data=IMU_data)
+                timeseries_from_sessions_list(train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
             for i in range(n_test):
                 test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                     test_sessions_metalist[i], sequence_length, imu_data=IMU_data)
@@ -272,12 +262,12 @@ for mean in means:
         else:
             # Convert data into timeseries
             train_dataset, train_data_array, train_labels_array, saved_scaler = timeseries_from_sessions_list(
-                train_sessions_list, sequence_length, fit_scaler=True, imu_data=IMU_data)
+                train_sessions_list, sequence_length, fit_scaler=True, imu_data=IMU_data, shuffle=True)
             for i in range(n_test):
                 test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                     test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
-        model_list[count] = apply_timeseries_cnn_v1(train_dataset, epochs=7, kernel_size=5, verbose=1)
+        model_list[count] = apply_timeseries_cnn_v1(train_dataset, epochs=3, kernel_size=5, verbose=1)
 
         for j in range(len(test_sessions_metalist)):
             predictions = get_predictions(model_list[count], test_dataset[j])
