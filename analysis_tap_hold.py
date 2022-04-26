@@ -267,7 +267,7 @@ for mean in means:
                 test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                     test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
-        model_list[count] = apply_timeseries_cnn_v1(train_dataset, epochs=3, kernel_size=5, verbose=1)
+        model_list[count] = apply_timeseries_cnn_v1(train_dataset, test_dataset, epochs=7, kernel_size=5, verbose=1)
 
         for j in range(len(test_sessions_metalist)):
             predictions = get_predictions(model_list[count], test_dataset[j])

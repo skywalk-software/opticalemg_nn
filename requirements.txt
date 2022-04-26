@@ -10,3 +10,4 @@ git+https://github.com/tslearn-team/tslearn.git@6c93071b385a89112b82799ae5870dae
 scikit-learn~=1.0.2
 torch~=1.11.0
 pytorch-lightning~=1.6.0
+torchsummary~=1.5.1
