@@ -6,6 +6,7 @@ Created on Tues Mar  8 13:09:52 2022
 """
 
 import random
+import sys
 from os import listdir
 from os.path import isfile, join
 
@@ -13,18 +14,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 # %% Top-Level Imports
 import pandas as pd
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.loggers import TensorBoardLogger
+from torch.utils.data import DataLoader, ConcatDataset
+from torchsummary import summary
 from tslearn.preprocessing import TimeSeriesResampler
 
 from classes import Trial
 # %% Local Imports
 from classes import User
 from functions_general import sample_n_sessions
-from functions_ml_torch import apply_timeseries_cnn_v1
+from functions_ml_torch import SkywalkCnnV1
 from functions_ml_torch import get_predictions
 from functions_ml_torch import timeseries_from_sessions_list
 from functions_postprocessing import apply_flag_pulses
 from functions_postprocessing import plot_predictions
 from functions_preprocessing import mean_subtract_skywalk_data
+
+if __name__ != '__main__':
+    sys.exit()
 
 
 # %% FUNCTION - RESAMPLES ONE TIMESTAMPED ARRAY TO THE SHAPE OF ANOTHER
@@ -171,13 +180,13 @@ all_day_one_sessions_list = background_phone_sessions_list + background_sessions
 all_sessions = tylerchen.get_sessions(tylerchen.get_trials())
 
 meandf = pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
-stddf =  pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
+stddf = pd.DataFrame(columns=all_sessions[0]['skywalk'].columns, index=range(len(all_sessions)))
 i = 0
 for session in all_sessions:
     meandf.loc[i] = session['skywalk'].describe().loc['mean']
-    stddf.loc[i] =  session['skywalk'].describe().loc['std']
+    stddf.loc[i] = session['skywalk'].describe().loc['std']
     i += 1
-    
+
 # %% Things to try -
 # expand events
 # different training subsets
@@ -188,118 +197,123 @@ for session in all_sessions:
 # Note - power scaling seems to dramatically inflate the importance of the backscatter channels (ofc)
 #        cuz their power is lower. fix this by making a correction factor or smth
 # %% SELECT SESSIONS AND TRAIN MODEL / PREDICT
-means = [128]
+mean = 128
 num_repeats = 10
 model_list = [None] * num_repeats
 n_test = 6
-for mean in means:
-    full_correct, full_false_pos, full_false_neg = np.zeros([n_test, num_repeats]), np.zeros(
-        [n_test, num_repeats]), np.zeros([n_test, num_repeats])
-    best_correct, best_false_pos, best_false_neg, best_index = [0] * n_test, [1000] * n_test, [1000] * n_test, \
-                                                               [0] * n_test
-    for count in range(num_repeats):
 
-        # Create lists of training and testing sessions by sampling from the sessions lists
-        simple_test_sessions, simple_train_sessions = sample_n_sessions(simple_sessions_list, 5)
-        drag_test_sessions, drag_train_sessions = sample_n_sessions(drag_sessions_list, 2)
-        rotation_test_sessions, rotation_train_sessions = sample_n_sessions(rotation_sessions_list, 2)
-        flexion_extension_test_sessions, flexion_extension_train_sessions = sample_n_sessions(
-            flexion_extension_sessions_list, 1)
-        allmixed_test_sessions, allmixed_train_sessions = sample_n_sessions(
-            allmixed_sessions_list, 1)
-        open_close_test_sessions, open_close_train_sessions = sample_n_sessions(open_close_sessions_list, 1)
+# Create lists of training and testing sessions by sampling from the sessions lists
+simple_test_sessions, simple_train_sessions = sample_n_sessions(simple_sessions_list, 5)
+drag_test_sessions, drag_train_sessions = sample_n_sessions(drag_sessions_list, 2)
+rotation_test_sessions, rotation_train_sessions = sample_n_sessions(rotation_sessions_list, 2)
+flexion_extension_test_sessions, flexion_extension_train_sessions = sample_n_sessions(
+    flexion_extension_sessions_list, 1)
+allmixed_test_sessions, allmixed_train_sessions = sample_n_sessions(
+    allmixed_sessions_list, 1)
+open_close_test_sessions, open_close_train_sessions = sample_n_sessions(open_close_sessions_list, 1)
 
-        # Concatenate training sessions, append test sessions into a metalist to get trial-type-specific metrics
-        train_sessions_list = simple_train_sessions + drag_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions + allmixed_background_sessions_list + allmixed_background_sessions_day2_list + background_sessions_list
-        test_sessions_metalist = [simple_test_sessions, drag_test_sessions, rotation_test_sessions,
-                                  flexion_extension_test_sessions, open_close_test_sessions, allmixed_test_sessions]
-        if n_test != len(test_sessions_metalist):
-            raise ValueError("n_test (", n_test, ") must equal length of test_sessions_metalist (",
-                             len(test_sessions_metalist), ")")
-        test_descriptions = ['simple', 'drag', 'rotation', 'flexion', 'open_close', 'allmixed']
+# Concatenate training sessions, append test sessions into a metalist to get trial-type-specific metrics
+train_sessions_list = simple_train_sessions + drag_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions + allmixed_background_sessions_list + allmixed_background_sessions_day2_list + background_sessions_list
+test_sessions_meta_names = ["simple_test_sessions", "drag_test_sessions", "rotation_test_sessions",
+                            "flexion_extension_test_sessions", "open_close_test_sessions", "allmixed_test_sessions"]
+test_sessions_metalist = [simple_test_sessions, drag_test_sessions, rotation_test_sessions,
+                          flexion_extension_test_sessions, open_close_test_sessions, allmixed_test_sessions]
+if n_test != len(test_sessions_metalist):
+    raise ValueError("n_test (", n_test, ") must equal length of test_sessions_metalist (",
+                     len(test_sessions_metalist), ")")
+test_descriptions = ['simple', 'drag', 'rotation', 'flexion', 'open_close', 'allmixed']
 
-        # Shuffle training list
-        random.seed(10)
-        random.shuffle(train_sessions_list)
+# Shuffle training list
+random.seed(10)
+random.shuffle(train_sessions_list)
 
-        # 1. Scale skywalk data by the LED power (adds new column 'skywalk_powerscaled')
-        power_scale = False  # leave as false until issues are fixed
-        if power_scale:
-            power_scale_skywalk_data(train_sessions_list)
-            for i in range(len(test_sessions_metalist)):
-                power_scale_skywalk_data(test_sessions_metalist[i])
+# 1. Scale skywalk data by the LED power (adds new column 'skywalk_powerscaled')
+power_scale = False  # leave as false until issues are fixed
+if power_scale:
+    power_scale_skywalk_data(train_sessions_list)
+    for i in range(len(test_sessions_metalist)):
+        power_scale_skywalk_data(test_sessions_metalist[i])
 
-        # 2. Resample IMU data (makes a copy)
-        train_sessions_list = resample_imu_data(train_sessions_list)
-        for i in range(len(test_sessions_metalist)):
-            test_sessions_metalist[i] = resample_imu_data(test_sessions_metalist[i])
+# 2. Resample IMU data (makes a copy)
+train_sessions_list = resample_imu_data(train_sessions_list)
+for i in range(len(test_sessions_metalist)):
+    test_sessions_metalist[i] = resample_imu_data(test_sessions_metalist[i])
 
-        # X. Take derivative of accel_data (if relevant)
+# X. Take derivative of accel_data (if relevant)
 
-        # 3. Subtract mean from skywalk data (makes a copy)
-        train_sessions_list = mean_subtract_skywalk_data(train_sessions_list, mean, power_scale)
-        for i in range(len(test_sessions_metalist)):
-            test_sessions_metalist[i] = mean_subtract_skywalk_data(test_sessions_metalist[i], mean, power_scale)
+# 3. Subtract mean from skywalk data (makes a copy)
+train_sessions_list = mean_subtract_skywalk_data(train_sessions_list, mean, power_scale)
+for i in range(len(test_sessions_metalist)):
+    test_sessions_metalist[i] = mean_subtract_skywalk_data(test_sessions_metalist[i], mean, power_scale)
 
-        # 4. Correct IMU indices after mean subtraction happened
-        train_sessions_list = correct_imu_indices(train_sessions_list, mean)
-        for i in range(len(test_sessions_metalist)):
-            test_sessions_metalist[i] = correct_imu_indices(test_sessions_metalist[i], mean)
+# 4. Correct IMU indices after mean subtraction happened
+train_sessions_list = correct_imu_indices(train_sessions_list, mean)
+for i in range(len(test_sessions_metalist)):
+    test_sessions_metalist[i] = correct_imu_indices(test_sessions_metalist[i], mean)
 
-        scaled = True
-        sequence_length = 11
-        # IMU_data = ['accelerometer', 'gyroscope']
-        IMU_data = None
-        test_dataset, test_data_array, test_labels_array = [None] * n_test, [None] * n_test, [None] * n_test
-        if not scaled:
-            # Convert data into timeseries
-            train_dataset, train_data_array, train_labels_array = \
-                timeseries_from_sessions_list(train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
-            for i in range(n_test):
-                test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
-                    test_sessions_metalist[i], sequence_length, imu_data=IMU_data)
+scaled = True
+sequence_length = 11
+# IMU_data = ['accelerometer', 'gyroscope']
+IMU_data = None
+test_dataset, test_data_array, test_labels_array = [None] * n_test, [None] * n_test, [None] * n_test
+if not scaled:
+    # Convert data into timeseries
+    train_dataset, train_data_array, train_labels_array = \
+        timeseries_from_sessions_list(train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
+    for i in range(n_test):
+        test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
+            test_sessions_metalist[i], sequence_length, imu_data=IMU_data)
 
-        else:
-            # Convert data into timeseries
-            train_dataset, train_data_array, train_labels_array, saved_scaler = timeseries_from_sessions_list(
-                train_sessions_list, sequence_length, fit_scaler=True, imu_data=IMU_data, shuffle=True)
-            for i in range(n_test):
-                test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
-                    test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
+else:
+    # Convert data into timeseries
+    train_dataset, train_data_array, train_labels_array, saved_scaler = timeseries_from_sessions_list(
+        train_sessions_list, sequence_length, fit_scaler=True, imu_data=IMU_data, shuffle=True)
+    for i in range(n_test):
+        test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
+            test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
-        model_list[count] = apply_timeseries_cnn_v1(train_dataset, test_dataset, epochs=7, kernel_size=5, verbose=1)
+train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=0)
+test_dataloader = [DataLoader(dataset, batch_size=32, num_workers=0) for dataset in test_dataset]
 
-        for j in range(len(test_sessions_metalist)):
-            predictions = get_predictions(model_list[count], test_dataset[j])
-            correct, false_pos, false_neg, caught_vec, true_on_vec, pred_on_vec = \
-                apply_flag_pulses(predictions, test_labels_array[j])
-            if (correct - false_pos) > (best_correct[j] - best_false_pos[j]):
-                best_correct[j], best_false_pos[j], best_false_neg[j], best_index[j] = \
-                    correct, false_pos, false_neg, count
-            full_correct[j][count] = correct
-            full_false_pos[j][count] = false_pos
-            full_false_neg[j][count] = false_neg
+kernel_size = 5
+epochs = 7
 
-            print(test_descriptions[j])
-            print('MEAN: Correct:',
-                  "{:.2%}".format(correct / (correct + false_neg)),
-                  'FalsePos:',
-                  "{:.2%}".format(false_pos / (correct + false_neg)),
-                  'FalseNeg:',
-                  "{:.2%}".format(false_neg / (correct + false_neg)))
+data, labels = next(iter(train_dataloader))
+numpy_data = data.numpy()
+numpy_labels = labels.numpy()
+batch_size, seq_length, n_features = numpy_data.shape[0], numpy_data.shape[1], numpy_data.shape[2]
+model = SkywalkCnnV1(kernel_size, n_features, seq_length, test_sessions_meta_names)
 
-    for j in range(n_test):
-        print(test_descriptions[j])
-        print('MEAN: Correct:', "{:.2%}".format(sum(full_correct[j]) / (sum(full_correct[j]) + sum(full_false_neg[j]))),
-              'FalsePos:', "{:.2%}".format(sum(full_false_pos[j]) / (sum(full_correct[j]) + sum(full_false_neg[j]))),
-              'FalseNeg:', "{:.2%}".format(sum(full_false_neg[j]) / (sum(full_correct[j]) + sum(full_false_neg[j]))))
-        print('BEST: Index:', best_index[j], ' Correct:',
-              "{:.2%}".format(best_correct[j] / (best_correct[j] + best_false_neg[j])), 'FalsePos:',
-              "{:.2%}".format(best_false_pos[j] / (best_correct[j] + best_false_neg[j])), 'FalseNeg:',
-              "{:.2%}".format(best_false_neg[j] / (best_correct[j] + best_false_neg[j])))
+print(summary(model, data.shape[1:]))
+logger = TensorBoardLogger('logs')
 
+trainer = Trainer(
+    max_epochs=epochs,
+    logger=logger,
+    val_check_interval=1.0,
+    auto_lr_find=True,
+    callbacks=[
+        LearningRateMonitor(logging_interval='epoch')
+    ]
+)
 
-    
+# # Run learning rate finder
+# lr_finder = trainer.tuner.lr_find(model, train_dataloaders=train_dataloader)
+#
+# # Results can be found in
+# print(lr_finder.results)
+#
+# # Plot with
+# fig = lr_finder.plot(suggest=True)
+# fig.show()
+#
+# # Pick point based on plot, or get suggestion
+# new_lr = lr_finder.suggestion()
+#
+# # update hparams of the model
+# model.hparams.lr = new_lr
+trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=test_dataloader)
+
 # %% EXAMINE DATA
 # colorlist = ['b'] * 8 + ['orange'] * 25
 # alphalist = [1] * 8 + [0.1] * 25
@@ -316,19 +330,18 @@ for mean in means:
 #     else:
 #         session_descriptions = session_descriptions + [all_trials[i].trial_type] * all_trials[i].num_sessions
 # print(session_descriptions)
-
-fig, axs = plt.subplots(3)
-axs[0].bar(range(20), np.mean(np.array(meandf)[:,0:20], axis=0))
-axs[0].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(meandf)[:,20:], axis=0).tolist(), alpha = 0.5)
-axs[0].set_title('Mean')
-axs[1].bar(range(20), np.mean(np.array(stddf)[:,0:20], axis=0))
-axs[1].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(stddf)[:,20:], axis=0).tolist(), alpha = 0.5)
-axs[1].set_title('StdDev')
-axs[2].bar(range(20), np.mean(np.array(peakdf)[:,0:20], axis=0))
-axs[2].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(peakdf)[:,20:], axis=0).tolist(), alpha = 0.5)
-axs[2].set_title('Peakdiff (max - min)')
+#
+# fig, axs = plt.subplots(3)
+# axs[0].bar(range(20), np.mean(np.array(meandf)[:,0:20], axis=0))
+# axs[0].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(meandf)[:,20:], axis=0).tolist(), alpha = 0.5)
+# axs[0].set_title('Mean')
+# axs[1].bar(range(20), np.mean(np.array(stddf)[:,0:20], axis=0))
+# axs[1].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(stddf)[:,20:], axis=0).tolist(), alpha = 0.5)
+# axs[1].set_title('StdDev')
+# axs[2].bar(range(20), np.mean(np.array(peakdf)[:,0:20], axis=0))
+# axs[2].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(peakdf)[:,20:], axis=0).tolist(), alpha = 0.5)
+# axs[2].set_title('Peakdiff (max - min)')
 # fig.xlabel('channel')
-
 
 
 # %% SAVE MODEL AND PLOT RESULTS
@@ -337,10 +350,9 @@ j = 5
 # predictions = get_predictions(model_list[i], test_dataset[j])
 # plot_predictions(predictions, test_labels_array[j], test_data_array[j])
 
-predictions = get_predictions(model_list[i], train_dataset)
+predictions = get_predictions(model, train_dataset)
 plot_predictions(predictions, train_labels_array, train_data_array)
 # model_list[0].save("../models/2022_03_17_TimeseriesCNN_HL2_v1")
-
 
 
 # %% Random stuff
@@ -354,7 +366,8 @@ for batch in train_dataset:
     #     continue
     if targets[31] != 1:
         continue
-    plot_predictions(np.array([0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]), np.array(targets[2:13]), np.array(inputs[2]))
+    plot_predictions(np.array([0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]), np.array(targets[2:13]),
+                     np.array(inputs[2]))
     # fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2)
     # ax1.plot(inputs[17])
     # ax2.plot(inputs[18])
@@ -364,7 +377,6 @@ for batch in train_dataset:
     # ax6.plot(inputs[22])
     print(targets)
     break
-
 
 # for data, labels in train_dataset.take(1):  # only take first element of dataset
 #     numpy_data = data.numpy()
