@@ -15,6 +15,7 @@ from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
 from sklearn import preprocessing
 
+from functions_postprocessing import plot_predictions
 from metrics import process_clicks
 
 
@@ -134,6 +135,9 @@ class SkywalkCnnV1(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
         # y_same = torch.vstack([1 - y, y]).T
+        if batch_idx == 0 and dataset_idx == 0:
+            tensorboard = cast(TensorBoardLogger, self.logger).experiment
+            tensorboard.add_graph(self, x)
         return y.cpu(), y_hat.detach().cpu()
 
     def validation_epoch_end(self, outputs):
