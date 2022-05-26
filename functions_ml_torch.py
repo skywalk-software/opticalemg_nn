@@ -87,7 +87,7 @@ class SkywalkCnnV1(pl.LightningModule):
             nn.Conv1d(in_channels, 48, kernel_size,),
             nn.ReLU(),
             nn.MaxPool1d(2),
-            nn.BatchNorm1d(48),
+            # nn.BatchNorm1d(48),
             nn.Flatten(),
             nn.Linear(144, 20),
             nn.ReLU(),
