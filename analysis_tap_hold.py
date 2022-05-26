@@ -10,7 +10,7 @@ import sys
 from os import listdir
 from os.path import isfile, join
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy as np
 # %% Top-Level Imports
 import pandas as pd
@@ -24,7 +24,7 @@ from tslearn.preprocessing import TimeSeriesResampler
 from classes import Trial
 # %% Local Imports
 from classes import User
-from functions_general import sample_n_sessions
+from functions_general import sample_percentage_sessions
 from functions_ml_torch import SkywalkCnnV1
 from functions_ml_torch import get_predictions
 from functions_ml_torch import timeseries_from_sessions_list
@@ -140,6 +140,11 @@ simple_sessions_list = tylerchen.get_sessions(
 drag_sessions_list = tylerchen.get_sessions(
     tylerchen.get_trials(date='2022-03-06', trial_type='guitar_hero_tap_hold',
                          notes='unidirectional motion of hand during hold events, emulating click + drag'))
+realistic_sessions_list = tylerchen.get_sessions(
+    tylerchen.get_trials(date='2022-03-18', trial_type='guitar_hero_tap_hold',
+                         notes='realistic HL2 use (longer holds) with rest periods'))
+realistic_background_sessions_list =  tylerchen.get_sessions(
+    tylerchen.get_trials(date='2022-03-18', trial_type='passive_motion_no_task'))
 rotation_sessions_list = tylerchen.get_sessions(
     tylerchen.get_trials(date='2022-03-06', trial_type='guitar_hero_tap_hold',
                          notes='light rotation of wrist in between events'))
@@ -200,31 +205,35 @@ for session in all_sessions:
 mean = 128
 num_repeats = 10
 model_list = [None] * num_repeats
-n_test = 6
 
 # Create lists of training and testing sessions by sampling from the sessions lists
-simple_test_sessions, simple_train_sessions = sample_n_sessions(simple_sessions_list, 5)
-drag_test_sessions, drag_train_sessions = sample_n_sessions(drag_sessions_list, 2)
-rotation_test_sessions, rotation_train_sessions = sample_n_sessions(rotation_sessions_list, 2)
-flexion_extension_test_sessions, flexion_extension_train_sessions = sample_n_sessions(
-    flexion_extension_sessions_list, 1)
-allmixed_test_sessions, allmixed_train_sessions = sample_n_sessions(
-    allmixed_sessions_list, 1)
-open_close_test_sessions, open_close_train_sessions = sample_n_sessions(open_close_sessions_list, 1)
+simple_test_sessions, simple_train_sessions = sample_percentage_sessions(simple_sessions_list, 0.2)
+drag_test_sessions, drag_train_sessions = sample_percentage_sessions(drag_sessions_list, 0.2)
+real_test_sessions, real_train_sessions = sample_percentage_sessions(realistic_sessions_list, 0.2)
+# real_background_test_sessions, real_background_train_sessions = sample_n_sessions(realistic_background_sessions_list, 1)
+rotation_test_sessions, rotation_train_sessions = sample_percentage_sessions(rotation_sessions_list, 0.2)
+flexion_extension_test_sessions, flexion_extension_train_sessions = sample_percentage_sessions(
+    flexion_extension_sessions_list, 0.2)
+allmixed_test_sessions, allmixed_train_sessions = sample_percentage_sessions(
+    allmixed_sessions_list, 0.2)
+open_close_test_sessions, open_close_train_sessions = sample_percentage_sessions(open_close_sessions_list, 0.2)
 
 # Concatenate training sessions, append test sessions into a metalist to get trial-type-specific metrics
-train_sessions_list = simple_train_sessions + drag_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions + allmixed_background_sessions_list + allmixed_background_sessions_day2_list + background_sessions_list
-test_sessions_meta_names = ["simple_test_sessions", "drag_test_sessions", "rotation_test_sessions",
-                            "flexion_extension_test_sessions", "open_close_test_sessions", "allmixed_test_sessions"]
-test_sessions_metalist = [simple_test_sessions, drag_test_sessions, rotation_test_sessions,
-                          flexion_extension_test_sessions, open_close_test_sessions, allmixed_test_sessions]
+# train_sessions_list = simple_train_sessions + drag_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions + allmixed_background_sessions_list + allmixed_background_sessions_day2_list + background_sessions_list
+# test_sessions_meta_names = ["simple_test_sessions", "drag_test_sessions", "rotation_test_sessions",
+#                             "flexion_extension_test_sessions", "open_close_test_sessions", "allmixed_test_sessions"]
+# test_sessions_metalist = [simple_test_sessions, drag_test_sessions, rotation_test_sessions,
+#                           flexion_extension_test_sessions, open_close_test_sessions, allmixed_test_sessions]
+train_sessions_list = simple_train_sessions + real_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions
+test_sessions_meta_names = ["real_test_sessions", "simple_test_sessions", "flexion_extension_test_sessions", "open_close_test_sessions", "allmixed_test_sessions"]
+test_sessions_metalist = [real_test_sessions, simple_test_sessions, flexion_extension_test_sessions, open_close_test_sessions, allmixed_test_sessions]
+n_test = len(test_sessions_metalist)
 if n_test != len(test_sessions_metalist):
     raise ValueError("n_test (", n_test, ") must equal length of test_sessions_metalist (",
                      len(test_sessions_metalist), ")")
 test_descriptions = ['simple', 'drag', 'rotation', 'flexion', 'open_close', 'allmixed']
 
 # Shuffle training list
-random.seed(10)
 random.shuffle(train_sessions_list)
 
 # 1. Scale skywalk data by the LED power (adds new column 'skywalk_powerscaled')
@@ -272,11 +281,12 @@ else:
         test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
             test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
-train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=0)
-test_dataloader = [DataLoader(dataset, batch_size=32, num_workers=0) for dataset in test_dataset]
+num_workers = 0
+train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=False, num_workers=num_workers)
+test_dataloader = [DataLoader(dataset, batch_size=32, num_workers=num_workers) for dataset in test_dataset]
 
 kernel_size = 5
-epochs = 7
+epochs = 10
 
 data, labels = next(iter(train_dataloader))
 numpy_data = data.numpy()
@@ -288,10 +298,10 @@ print(summary(model, data.shape[1:]))
 logger = TensorBoardLogger('logs')
 
 trainer = Trainer(
+    accelerator="cpu",
     max_epochs=epochs,
     logger=logger,
     val_check_interval=1.0,
-    auto_lr_find=True,
     callbacks=[
         LearningRateMonitor(logging_interval='epoch')
     ]
@@ -313,6 +323,7 @@ trainer = Trainer(
 # # update hparams of the model
 # model.hparams.lr = new_lr
 trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=test_dataloader)
+
 
 # %% EXAMINE DATA
 # colorlist = ['b'] * 8 + ['orange'] * 25

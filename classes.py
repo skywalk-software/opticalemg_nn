@@ -2,7 +2,7 @@
 """
 Created on Tues Mar  15 10:34:30 2022
 
-@author: tyler 
+@author: tyler
 """
 
 # %% Imports
@@ -132,12 +132,12 @@ class User(object):
                         for j_s in range(0, trials_list[i_t].num_sessions):
                             sessions_list.append(trials_list[i_t].session_data[j_s])
                     else:
-                        # get sessions up to how_many, starting from the first session 
+                        # get sessions up to how_many, starting from the first session
                         if not second_half:
                             for j_s in range(0, how_many_sessions_list[i_t]):
                                 sessions_list.append(trials_list[i_t].session_data[j_s])
                         else:
-                            # get sessions up to how_many, starting from the last session 
+                            # get sessions up to how_many, starting from the last session
                             for j_s in range(trials_list[i_t].num_sessions - how_many_sessions_list[i_t],
                                              trials_list[i_t].num_sessions):
                                 sessions_list.append(trials_list[i_t].session_data[j_s])
@@ -244,3 +244,82 @@ class Trial(object):
                     self.date == other.date and self.time == other.time and self.user_id == other.user_id and
                     self.hand == other.hand)
         return False
+
+
+# %% Event Class
+# Note: doesn't account for the expeirment that an event came from.
+# If you try to compare across multiple experiments it'll let you do it but throw super wrong values
+class Event(object):
+    def __init__(self, rising_edge_timestamp, falling_edge_timestamp, rising_edge_index, falling_edge_index,
+                 ground_truth_event):
+        self.rising_edge_timestamp = rising_edge_timestamp
+        self.falling_edge_timestamp = falling_edge_timestamp
+        self.rising_edge_index = rising_edge_index
+        self.falling_edge_index = falling_edge_index
+        self.detected = False
+        self.pred_events = []
+        self.ground_truth_event = ground_truth_event
+
+    def __repr__(self):
+        return f'Event <Rising Edge={self.rising_edge_index, self.rising_edge_timestamp} ' \
+               f'Falling Edge={self.falling_edge_index, self.falling_edge_timestamp}>'
+
+    # Note: doesn't account for the expeirment that an event came from.
+    # If you try to compare across multiple experiments it'll let you do it but throw super wrong values
+    def check_overlap(self, event):
+        if self.rising_edge_timestamp <= event.rising_edge_timestamp and self.falling_edge_timestamp > event.rising_edge_timestamp:
+            return True
+        elif self.rising_edge_timestamp >= event.rising_edge_timestamp and self.rising_edge_timestamp < event.falling_edge_timestamp:
+            return True
+        else:
+            return False
+
+    def append_pred_event(self, event):
+        if not self.ground_truth_event:
+            raise ValueError("This event is not a ground_truth_event and therefore cannot take a predicted event.")
+
+        if self.check_overlap(event):
+            self.pred_events.append(event)
+            if not self.detected:
+                self.detected = True
+
+        else:
+            raise ValueError("Event does not overlap. Self Timestamps:", self.rising_edge_timestamp, ",",
+                             self.falling_edge_timestamp, "Pred Event Timestamps:", event.rising_edge_timestamp, ",",
+                             event.falling_edge_timestamp)
+
+    def get_rising_edge_latency(self):
+        if not self.detected:
+            raise ValueError("This event was not detected and has no rising edge latency.")
+        else:
+            earliest_timestamp = self.pred_events[0].rising_edge_timestamp
+            for i in range(len(self.pred_events)):
+                earliest_timestamp = min(earliest_timestamp, self.pred_events[i].rising_edge_timestamp)
+            return earliest_timestamp - self.rising_edge_timestamp
+
+    def get_falling_edge_latency(self):
+        if not self.detected:
+            raise ValueError("This event was not detected and has no falling edge latency.")
+        else:
+            latest_timestamp = self.pred_events[0].falling_edge_timestamp
+            for i in range(len(self.pred_events)):
+                latest_timestamp = max(latest_timestamp, self.pred_events[i].falling_edge_timestamp)
+            return latest_timestamp - self.falling_edge_timestamp
+
+    def get_num_drops(self):
+        if not self.detected:
+            raise ValueError("This event was not detected and has no drops.")
+        return (len(self.pred_events) - 1)
+
+    def get_dropped_duration(self):
+        if self.get_num_drops <= 0:
+            raise ValueError("This event had no drops.")
+        dropped_duration = 0
+        # TODO assumes that pred_events is sorted in chronological order
+        for i in range(len(self.pred_events) - 1):
+            dropped_duration += (
+                        self.pred_events[i + 1].rising_edge_timestamp - self.pred_events[i].falling_edge_timestamp)
+        return dropped_duration
+
+    def get_event_duration(self):
+        return self.falling_edge_timestamp - self.rising_edge_timestamp

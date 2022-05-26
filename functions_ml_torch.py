@@ -31,7 +31,7 @@ class SkywalkDataset(Dataset):
         return self.data_length
 
     def __getitem__(self, item):
-        return self.data_array[item: item + self.seq_length], self.labels_array[item + self.seq_length]
+        return self.data_array[item: item + self.seq_length], self.labels_array[item]
 
 
 def timeseries_from_sessions_list(
@@ -97,11 +97,14 @@ class SkywalkCnnV1(pl.LightningModule):
             nn.Linear(10, 10),
             nn.ReLU(),
             nn.Linear(10, 2),
-            nn.Softmax()
         )
+        for module in self.layers.modules():
+            if isinstance(module, nn.Linear) or isinstance(module, nn.Conv1d):
+                nn.init.xavier_uniform_(module.weight.data)
+                # module.weight.data.fill_(1)
+                module.bias.data.fill_(0)
         self.loss = nn.CrossEntropyLoss()
-        self.hparams.lr = 1e-03
-
+        self.hparams.lr = 0.001
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = torch.transpose(x, 1, 2)
@@ -131,7 +134,7 @@ class SkywalkCnnV1(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
         # y_same = torch.vstack([1 - y, y]).T
-        return y, y_hat.detach()
+        return y.cpu(), y_hat.detach().cpu()
 
     def validation_epoch_end(self, outputs):
         tensorboard = cast(TensorBoardLogger, self.logger).experiment
@@ -150,7 +153,7 @@ class SkywalkCnnV1(pl.LightningModule):
         val_drops = []
 
         for dataset_idx, dataset_outputs in enumerate(outputs):
-            dataset_prefix = f"{val_prefix}{self.test_dataset_names[dataset_idx]}/"
+            dataset_prefix = f"val-all/{self.test_dataset_names[dataset_idx]}/"
             y_list = []
             y_hat_list = []
             for batch_idx, (y, y_hat) in enumerate(dataset_outputs):
@@ -164,7 +167,7 @@ class SkywalkCnnV1(pl.LightningModule):
             samples = len(total_y)
 
             loss = self.loss(total_y_hat, total_y)
-            estimated_y = (total_y_hat[:, 0] < total_y_hat[:, 1]).int()
+            estimated_y = (total_y_hat[:, 0] < total_y_hat[:, 1]).long()
             accuracy = torch.sum((estimated_y == total_y)) / samples
 
             result = process_clicks(total_y, estimated_y)

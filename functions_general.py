@@ -5,7 +5,6 @@ Created on Tues Mar  8 13:09:52 2022
 @author: tyler 
 """
 
-
 # %% Functions to import from this file
 # from functions_general import get_rising_edge_indices
 # from functions_general import get_falling_edge_indices
@@ -15,6 +14,7 @@ Created on Tues Mar  8 13:09:52 2022
 import pandas as pd
 import numpy as np
 import random
+
 
 # %% FUNCTION - GET INDICES OF RISING EDGES FOR DATAFRAME
 # contact_dataframe = train_sessions_list[0]['contact']
@@ -88,7 +88,20 @@ def get_falling_edge_indices(input_df, which_column):
 # %% FUNCTION - RANDOMLY CHOOSE N SAMPLES FROM SESSIONS
 # test_sessions, train_sessions = sample_n_sessions(sessions_list, n_sessions)
 def sample_n_sessions(sessions_list, n_sessions):
-    random.seed()
-    temp = random.sample(sessions_list, len(sessions_list))
-    return temp[:n_sessions], temp[n_sessions:]
+    # temp = random.sample(sessions_list, len(sessions_list))
+    return sessions_list[len(sessions_list) - n_sessions:], sessions_list[len(sessions_list) - n_sessions:]
 
+
+def sample_percentage_sessions(sessions_list: [pd.DataFrame], percentage: float):
+    all_samples = sum(len(session) for session in sessions_list)
+    before_samples = all_samples * (1 - percentage)
+    sampled = []
+    not_sampled = []
+    length = 0
+    for session in sessions_list:
+        if length + len(session) < before_samples:
+            not_sampled += [session]
+        else:
+            sampled += [session]
+        length += len(session)
+    return sampled, not_sampled

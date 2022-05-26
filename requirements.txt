@@ -2,12 +2,13 @@ numpy~=1.22
 pyserial~=3.5
 pandas~=1.4.1
 h5py~=3.6.0
-matplotlib~=3.5.1
-tensorflow~=2.8.0; sys_platform != 'darwin'
-tensorflow-macos~=2.8.0; sys_platform == 'darwin'
-keras~=2.8.0
-git+https://github.com/tslearn-team/tslearn.git@6c93071b385a89112b82799ae5870daeca1ab88b #tslearn~=0.5.2
-scikit-learn~=1.0.2
-torch~=1.11.0
-pytorch-lightning~=1.6.0
+matplotlib==3.5.2
+keras==2.9.0
+git+https://github.com/tslearn-team/tslearn.git@6c93071b385a89112b82799ae5870daeca1ab88b; sys_platform == 'darwin'
+tslearn~=0.5.2; sys_platform != 'darwin'
+scikit-learn==1.1.1
+torch~=1.11.0; sys_platform != 'darwin'
+https://download.pytorch.org/whl/nightly/cpu/torch-1.13.0.dev20220524-cp38-none-macosx_11_0_arm64.whl; sys_platform == 'darwin'
+# pytorch-lightning==1.6.3
+git+git@github.com:PyTorchLightning/pytorch-lightning.git@e44265f08183063ec2622438753ccf242f4919d7;
 torchsummary~=1.5.1
