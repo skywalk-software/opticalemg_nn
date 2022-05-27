@@ -262,7 +262,7 @@ if __name__ == '__main__':
         test_sessions_metalist[i] = correct_imu_indices(test_sessions_metalist[i], mean)
 
     scaled = True
-    sequence_length = 11
+    sequence_length = 21
     # IMU_data = ['accelerometer', 'gyroscope']
     IMU_data = None
     test_dataset, test_data_array, test_labels_array = [None] * n_test, [None] * n_test, [None] * n_test
