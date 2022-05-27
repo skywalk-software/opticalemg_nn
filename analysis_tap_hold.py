@@ -285,7 +285,7 @@ num_workers = 0
 train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=False, num_workers=num_workers)
 test_dataloader = [DataLoader(dataset, batch_size=32, num_workers=num_workers) for dataset in test_dataset]
 
-kernel_size = 5
+data, labels, weights = next(iter(train_dataloader))
 epochs = 10
 
 data, labels = next(iter(train_dataloader))

@@ -18,21 +18,30 @@ from sklearn import preprocessing
 from functions_postprocessing import plot_predictions
 from metrics import process_clicks
 
+CLICK_REGION = 10
+NONE_CLICK_REGION_WEIGHT = 2
 
 class SkywalkDataset(Dataset):
 
     def __init__(self, data_array: np.ndarray, labels_array: np.ndarray, seq_length: int):
-        self.data_array = data_array.astype(np.float32)
-        self.labels_array = labels_array.astype(np.long)
+        self.data_array = torch.FloatTensor(data_array)
+        self.labels_array = torch.LongTensor(labels_array)
         assert data_array.shape[0] == labels_array.shape[0]
         self.seq_length = seq_length
         self.data_length = len(data_array) - seq_length
+        self.weights_array = torch.ones(self.labels_array.shape, dtype=torch.float)
+        for i in range(self.weights_array.shape[0]):
+            start = max(i - CLICK_REGION, 0)
+            end = min(i + CLICK_REGION, len(self.labels_array) - 1)
+            if torch.any(self.labels_array[start: end]):
+                self.weights_array[i] = NONE_CLICK_REGION_WEIGHT
+
 
     def __len__(self):
         return self.data_length
 
     def __getitem__(self, item):
-        return self.data_array[item: item + self.seq_length], self.labels_array[item]
+        return self.data_array[item: item + self.seq_length], self.labels_array[item], self.weights_array[item]
 
 
 def timeseries_from_sessions_list(
@@ -104,7 +113,7 @@ class SkywalkCnnV1(pl.LightningModule):
                 nn.init.xavier_uniform_(module.weight.data)
                 # module.weight.data.fill_(1)
                 module.bias.data.fill_(0)
-        self.loss = nn.CrossEntropyLoss()
+        self.loss = nn.CrossEntropyLoss(reduction='none')
         self.hparams.lr = 0.001
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -125,20 +134,21 @@ class SkywalkCnnV1(pl.LightningModule):
         }
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
+        x, y, w = batch
         y_hat = self(x)
-        loss = self.loss(y_hat, y)
+        raw_loss = self.loss(y_hat, y)
+        loss = torch.sum(raw_loss * w) / torch.sum(w)
         self.log("train/loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx, dataset_idx):
-        x, y = batch
+        x, y, w = batch
         y_hat = self(x)
         # y_same = torch.vstack([1 - y, y]).T
         if batch_idx == 0 and dataset_idx == 0:
             tensorboard = cast(TensorBoardLogger, self.logger).experiment
             tensorboard.add_graph(self, x)
-        return y.cpu(), y_hat.detach().cpu()
+        return y.cpu(), y_hat.detach().cpu(), w.cpu()
 
     def validation_epoch_end(self, outputs):
         tensorboard = cast(TensorBoardLogger, self.logger).experiment
@@ -160,17 +170,21 @@ class SkywalkCnnV1(pl.LightningModule):
             dataset_prefix = f"val-all/{self.test_dataset_names[dataset_idx]}/"
             y_list = []
             y_hat_list = []
-            for batch_idx, (y, y_hat) in enumerate(dataset_outputs):
+            w_list = []
+            for batch_idx, (y, y_hat, w) in enumerate(dataset_outputs):
                 y_list += [y]
                 y_hat_list += [y_hat]
+                w_list += [w]
             total_y = torch.cat(y_list)
             total_y_hat = torch.cat(y_hat_list)
+            total_w = torch.cat(w_list)
 
             assert len(total_y) == len(total_y_hat)
 
             samples = len(total_y)
 
-            loss = self.loss(total_y_hat, total_y)
+            raw_loss = self.loss(total_y_hat, total_y)
+            loss = torch.sum(total_w * raw_loss) / torch.sum(total_w)
             estimated_y = (total_y_hat[:, 0] < total_y_hat[:, 1]).long()
             accuracy = torch.sum((estimated_y == total_y)) / samples
 
