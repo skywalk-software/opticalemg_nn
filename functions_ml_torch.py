@@ -224,11 +224,19 @@ class SkywalkCnnV1(pl.LightningModule):
 
         self.log(f"{val_prefix}loss", val_loss)
         self.log(f"{val_prefix}accuracy", val_acc)
-        self.log(f"{val_prefix}FP-P", math.nan if val_total_true_clicks == 0 else val_total_false_clicks / val_total_true_clicks)
-        self.log(f"{val_prefix}TP-P", math.nan if val_total_true_clicks == 0 else val_total_detected_clicks / val_total_true_clicks)
-        self.log(f"{val_prefix}drops-P", math.nan if val_total_true_clicks == 0 else len(val_drops) / val_total_true_clicks)
-        self.log(f"{val_prefix}std-onset", math.nan if val_total_detected_clicks < 2 else statistics.stdev(val_on_set_offsets))
-        self.log(f"{val_prefix}std-offset", math.nan if val_total_detected_clicks < 2 else statistics.stdev(val_off_set_offsets))
+        fp_p = math.nan if val_total_true_clicks == 0 else val_total_false_clicks / val_total_true_clicks
+        self.log(f"{val_prefix}FP-P", fp_p)
+        tp_p = math.nan if val_total_true_clicks == 0 else val_total_detected_clicks / val_total_true_clicks
+        self.log(f"{val_prefix}TP-P", tp_p)
+        drops_p = math.nan if val_total_true_clicks == 0 else len(val_drops) / val_total_true_clicks
+        self.log(f"{val_prefix}drops-P", drops_p)
+        std_onset = math.nan if val_total_detected_clicks < 2 else statistics.stdev(val_on_set_offsets)
+        self.log(f"{val_prefix}std-onset", std_onset)
+        std_offset = math.nan if val_total_detected_clicks < 2 else statistics.stdev(val_off_set_offsets)
+        self.log(f"{val_prefix}std-offset", std_offset)
+
+        print(f"[for notion reporting]"
+              f"\t{tp_p:.4f}\t{fp_p:.4f}\t{drops_p:.4f}\t{val_loss:.4f}\t{std_onset:.4f}\t{std_offset:.4f}")
 
         if val_total_detected_clicks > 1:
             tensorboard.add_histogram(f"{val_prefix}onset", np.array(val_on_set_offsets), self.current_epoch)
