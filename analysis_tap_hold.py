@@ -289,7 +289,7 @@ if __name__ == '__main__':
                        test_dataset]
 
     kernel_size = 5
-    epochs = 10
+    epochs = 30
 
     data, labels, weights = next(iter(train_dataloader))
     numpy_data = data.numpy()

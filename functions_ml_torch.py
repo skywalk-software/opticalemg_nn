@@ -123,7 +123,7 @@ class SkywalkCnnV1(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
-        scheduler = ReduceLROnPlateau(optimizer, 'min')
+        scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.3)
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
