@@ -29,8 +29,8 @@ NONE_CLICK_REGION_WEIGHT = 2
 class SkywalkDataset(Dataset):
 
     def __init__(self, data_array: np.ndarray, labels_array: np.ndarray, seq_length: int):
-        self.data_array = torch.FloatTensor(data_array)
-        self.labels_array = torch.LongTensor(labels_array)
+        self.data_array = torch.FloatTensor(data_array).cuda()
+        self.labels_array = torch.LongTensor(labels_array).cuda()
         assert data_array.shape[0] == labels_array.shape[0]
         self.seq_length = seq_length
         self.data_length = len(data_array) - seq_length
@@ -92,38 +92,72 @@ def timeseries_from_sessions_list(
         return dataset, data_array, labels_array
 
 
+class ResidualBlock(nn.Module):
+    def __init__(self, input_seq_length, input_channel, output_channel, middle_channel, dilation,
+                 kernel_size):
+        super().__init__()
+        self.input_seq_length = input_seq_length
+        self.output_seq_length = input_seq_length - (kernel_size - 1) * dilation
+        self.input_channel = input_channel
+        self.output_channel = output_channel
+        self.middle_channel = middle_channel
+        self.dilation = dilation
+        self.kernel_size = kernel_size
+        self.conv1 = nn.Conv1d(input_channel, middle_channel, kernel_size, dilation=self.dilation)
+        self.dropout1 = nn.Dropout(0.25)
+        self.batchnorm1 = nn.BatchNorm1d(middle_channel)
+        self.conv2 = nn.Conv1d(middle_channel, output_channel, 1)
+        self.dropout2 = nn.Dropout(0.25)
+        self.batchnorm2 = nn.BatchNorm1d(output_channel)
+
+
+    def forward(self, x):
+        residual = x[:, :, self.input_seq_length - self.output_seq_length: self.input_seq_length]
+        x = self.conv1(x)
+        x = self.batchnorm1(x)
+        x = F.relu(x)
+        x = self.dropout1(x)
+        x = self.conv2(x)
+        x = self.batchnorm2(x)
+        x = F.relu(x)
+        x = self.dropout2(x)
+        x += residual
+        return x
+
+
 class SkywalkCnnV1(pl.LightningModule):
     def __init__(self, kernel_size: int, in_channels: int, seq_length: int, test_dataset_names: [str]):
         super(SkywalkCnnV1, self).__init__()
         self.test_dataset_names = test_dataset_names
         self.kernel_size = kernel_size
-        self.layers = nn.Sequential(
-            nn.Conv1d(in_channels, 48, kernel_size,),
+        self.layer1 = nn.Sequential(
+            nn.Conv1d(in_channels, 32, kernel_size),
+            nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.MaxPool1d(2),
-            # nn.BatchNorm1d(48),
-            nn.Flatten(),
-            nn.Linear(144, 20),
-            nn.ReLU(),
-            nn.Linear(20, 10),
-            nn.ReLU(),
-            nn.Linear(10, 10),
-            nn.ReLU(),
-            nn.Linear(10, 10),
-            nn.ReLU(),
-            nn.Linear(10, 2),
+            nn.Dropout(0.25),
         )
-        for module in self.layers.modules():
-            if isinstance(module, nn.Linear) or isinstance(module, nn.Conv1d):
-                nn.init.xavier_uniform_(module.weight.data)
-                # module.weight.data.fill_(1)
-                module.bias.data.fill_(0)
+        self.layer2 = ResidualBlock(seq_length - (kernel_size - 1), 32, 32, 32, 3, kernel_size)
+        self.layer3 = ResidualBlock(self.layer2.output_seq_length, 32, 32, 32, 9, kernel_size)
+        self.layer4 = ResidualBlock(self.layer3.output_seq_length, 32, 32, 32, 27, kernel_size)
+        self.layer5 = ResidualBlock(self.layer4.output_seq_length, 32, 32, 32, 81, kernel_size)
+        self.layer6 = nn.Linear(self.layer5.output_seq_length * 32, 2)
+        # for module in self.layers.modules():
+        #     if isinstance(module, nn.Linear) or isinstance(module, nn.Conv1d):
+        #         nn.init.xavier_uniform_(module.weight.data)
+        #         # module.weight.data.fill_(1)
+        #         module.bias.data.fill_(0)
         self.loss = nn.CrossEntropyLoss(reduction='none')
         self.hparams.lr = 0.001
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = torch.transpose(x, 1, 2)
-        x = self.layers(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.layer5(x)
+        x = torch.flatten(x, 1)
+        x = self.layer6(x)
         return x
 
     def configure_optimizers(self):
@@ -150,9 +184,9 @@ class SkywalkCnnV1(pl.LightningModule):
         x, y, w = batch
         y_hat = self(x)
         # y_same = torch.vstack([1 - y, y]).T
-        if batch_idx == 0 and dataset_idx == 0:
-            tensorboard = cast(TensorBoardLogger, self.logger).experiment
-            tensorboard.add_graph(self, x)
+        # if batch_idx == 0 and dataset_idx == 0:
+        #     tensorboard = cast(TensorBoardLogger, self.logger).experiment
+        #     tensorboard.add_graph(self, x)
         return y.cpu(), y_hat.detach().cpu(), w.cpu()
 
     def validation_epoch_end(self, outputs):
@@ -217,8 +251,8 @@ class SkywalkCnnV1(pl.LightningModule):
                 start = 0
                 end = length
             else:
-                start = length / 2 - 500
-                end = length / 2 + 500
+                start = length // 2 - 500
+                end = length // 2 + 500
             fig: matplotlib.figure = plot_predictions(estimated_y[start:end].numpy(), total_y[start:end].numpy(), None)
             # fig: matplotlib.figure = plot_predictions(estimated_y.numpy(), total_y.numpy(), None)
             # fig.show()

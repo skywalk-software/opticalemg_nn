@@ -262,7 +262,7 @@ if __name__ == '__main__':
         test_sessions_metalist[i] = correct_imu_indices(test_sessions_metalist[i], mean)
 
     scaled = True
-    sequence_length = 11
+    sequence_length = 243
     # IMU_data = ['accelerometer', 'gyroscope']
     IMU_data = None
     test_dataset, test_data_array, test_labels_array = [None] * n_test, [None] * n_test, [None] * n_test
@@ -283,25 +283,24 @@ if __name__ == '__main__':
                 test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
     num_workers = 0
-    train_dataloader = DataLoader(train_dataset, batch_size=128, shuffle=False, num_workers=num_workers,
-                                  pin_memory=True)
-    test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset in
+    train_dataloader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=num_workers)
+    test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers) for dataset in
                        test_dataset]
 
-    kernel_size = 5
+    kernel_size = 3
     epochs = 30
 
     data, labels, weights = next(iter(train_dataloader))
-    numpy_data = data.numpy()
-    numpy_labels = labels.numpy()
+    numpy_data = data.cpu().numpy()
+    numpy_labels = labels.cpu().numpy()
     batch_size, seq_length, n_features = numpy_data.shape[0], numpy_data.shape[1], numpy_data.shape[2]
-    model = SkywalkCnnV1(kernel_size, n_features, seq_length, test_sessions_meta_names)
+    model = SkywalkCnnV1(kernel_size, n_features, seq_length, test_sessions_meta_names).cuda()
 
     print(summary(model, data.shape[1:]))
     logger = TensorBoardLogger('logs')
 
     trainer = Trainer(
-        accelerator="cpu",
+        accelerator="gpu",
         max_epochs=epochs,
         logger=logger,
         val_check_interval=1.0,
