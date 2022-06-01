@@ -282,9 +282,9 @@ if __name__ == '__main__':
             test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                 test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
-    num_workers = 0
-    train_dataloader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=num_workers)
-    test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers) for dataset in
+    num_workers = 4
+    train_dataloader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=num_workers, pin_memory=True)
+    test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset in
                        test_dataset]
 
     kernel_size = 3
@@ -294,13 +294,13 @@ if __name__ == '__main__':
     numpy_data = data.cpu().numpy()
     numpy_labels = labels.cpu().numpy()
     batch_size, seq_length, n_features = numpy_data.shape[0], numpy_data.shape[1], numpy_data.shape[2]
-    model = SkywalkCnnV1(kernel_size, n_features, seq_length, test_sessions_meta_names).cuda()
+    model = SkywalkCnnV1(kernel_size, n_features, seq_length, test_sessions_meta_names)
 
-    print(summary(model, data.shape[1:]))
+    print(summary(model, data.shape[1:], device='cpu'))
     logger = TensorBoardLogger('logs')
 
     trainer = Trainer(
-        accelerator="gpu",
+        accelerator="auto",
         max_epochs=epochs,
         logger=logger,
         val_check_interval=1.0,

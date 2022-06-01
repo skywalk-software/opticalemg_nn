@@ -29,8 +29,8 @@ NONE_CLICK_REGION_WEIGHT = 2
 class SkywalkDataset(Dataset):
 
     def __init__(self, data_array: np.ndarray, labels_array: np.ndarray, seq_length: int):
-        self.data_array = torch.FloatTensor(data_array).cuda()
-        self.labels_array = torch.LongTensor(labels_array).cuda()
+        self.data_array = torch.FloatTensor(data_array)
+        self.labels_array = torch.LongTensor(labels_array)
         assert data_array.shape[0] == labels_array.shape[0]
         self.seq_length = seq_length
         self.data_length = len(data_array) - seq_length

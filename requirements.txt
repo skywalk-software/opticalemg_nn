@@ -7,8 +7,10 @@ keras==2.9.0
 git+https://github.com/tslearn-team/tslearn.git@6c93071b385a89112b82799ae5870daeca1ab88b; sys_platform == 'darwin'
 tslearn~=0.5.2; sys_platform != 'darwin'
 scikit-learn==1.1.1
-torch~=1.11.0; sys_platform != 'darwin'
-https://download.pytorch.org/whl/nightly/cpu/torch-1.13.0.dev20220524-cp38-none-macosx_11_0_arm64.whl; sys_platform == 'darwin'
-# pytorch-lightning==1.6.3
-git+git@github.com:PyTorchLightning/pytorch-lightning.git@e44265f08183063ec2622438753ccf242f4919d7;
+torch~=1.11.0; sys_platform != 'darwin' or platform_machine != 'arm64'
+torchvision~=0.12.0; sys_platform != 'darwin' or platform_machine != 'arm64'
+https://download.pytorch.org/whl/nightly/cpu/torch-1.13.0.dev20220531-cp38-none-macosx_11_0_arm64.whl; sys_platform == 'darwin' and platform_machine == 'arm64'
+https://download.pytorch.org/whl/nightly/cpu/torchvision-0.14.0a0%2Bf9f721d-cp38-cp38-macosx_11_0_arm64.whl; sys_platform == 'darwin' and platform_machine == 'arm64'
+pytorch-lightning==1.6.3; sys_platform != 'darwin' or platform_machine != 'arm64'
+git+https://github.com/PyTorchLightning/pytorch-lightning.git@3b252d7cc32c1c049015b46a54451666fc158a48; sys_platform == 'darwin' and platform_machine == 'arm64'
 torchsummary~=1.5.1
