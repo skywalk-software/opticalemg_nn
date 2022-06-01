@@ -33,7 +33,7 @@ class SkywalkDataset(Dataset):
         for i in range(self.weights_array.shape[0]):
             start = max(i - CLICK_REGION, 0)
             end = min(i + CLICK_REGION, len(self.labels_array) - 1)
-            if torch.any(self.labels_array[start: end]):
+            if not torch.any(self.labels_array[start: end]):
                 self.weights_array[i] = NONE_CLICK_REGION_WEIGHT
 
 
