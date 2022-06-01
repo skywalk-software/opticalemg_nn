@@ -169,6 +169,7 @@ def plot_predictions(pred, labels_array, data_array):
                     label="_" * i_e + "actual")
         plt.axvline(real_falling_edges[i_e], color="blue", ymin=0, ymax=.8, alpha=0.1)
 
-    plt.plot(data_array)
+    if data_array is not None:
+        plt.plot(data_array)
     plt.legend(loc='upper right')
-    return
+    return plt.gcf()

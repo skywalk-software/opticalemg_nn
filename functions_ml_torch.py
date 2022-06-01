@@ -1,10 +1,14 @@
+import io
 import math
 import statistics
 from typing import cast
 
+import PIL
+import matplotlib
 import pandas as pd
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -14,6 +18,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
 from sklearn import preprocessing
+from torchvision.transforms import ToTensor
 
 from functions_postprocessing import plot_predictions
 from metrics import process_clicks
@@ -206,6 +211,25 @@ class SkywalkCnnV1(pl.LightningModule):
 
             if len(drops) > 1:
                 tensorboard.add_histogram(f"{dataset_prefix}drops", np.array(drops), self.current_epoch)
+
+            length = len(estimated_y)
+            if length < 1000:
+                start = 0
+                end = length
+            else:
+                start = length / 2 - 500
+                end = length / 2 + 500
+            fig: matplotlib.figure = plot_predictions(estimated_y[start:end].numpy(), total_y[start:end].numpy(), None)
+            # fig: matplotlib.figure = plot_predictions(estimated_y.numpy(), total_y.numpy(), None)
+            # fig.show()
+
+            buf = io.BytesIO()
+            fig.savefig(buf, format='jpeg')
+            buf.seek(0)
+            image = PIL.Image.open(buf)
+            image = ToTensor()(image)
+            plt.close(fig)
+            tensorboard.add_image(f"{dataset_prefix}predictions", image, self.current_epoch)
 
             val_samples += samples
             val_loss_total += loss * samples
