@@ -300,7 +300,7 @@ if __name__ == '__main__':
     logger = TensorBoardLogger('logs')
 
     trainer = Trainer(
-        accelerator="auto",
+        accelerator="cpu" if sys.platform == 'darwin' else "auto",  # temp fix for mps not working
         max_epochs=epochs,
         logger=logger,
         val_check_interval=1.0,
