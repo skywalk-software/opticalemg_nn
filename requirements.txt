@@ -1,9 +1,8 @@
 numpy~=1.22
 pyserial~=3.5
 pandas~=1.4.1
-h5py~=3.6.0
+h5py~=3.7.0
 matplotlib==3.5.2
-keras==2.9.0
 git+https://github.com/tslearn-team/tslearn.git@6c93071b385a89112b82799ae5870daeca1ab88b; sys_platform == 'darwin'
 tslearn~=0.5.2; sys_platform != 'darwin'
 scikit-learn==1.1.1
