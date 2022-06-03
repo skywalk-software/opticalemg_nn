@@ -26,6 +26,7 @@ from metrics import process_clicks
 CLICK_REGION = 10
 NONE_CLICK_REGION_WEIGHT = 2
 
+
 class SkywalkDataset(Dataset):
 
     def __init__(self, data_array: np.ndarray, labels_array: np.ndarray, seq_length: int):
@@ -40,7 +41,6 @@ class SkywalkDataset(Dataset):
             end = min(i + CLICK_REGION, len(self.labels_array) - 1)
             if not torch.any(self.labels_array[start: end]):
                 self.weights_array[i] = NONE_CLICK_REGION_WEIGHT
-
 
     def __len__(self):
         return self.data_length
@@ -110,7 +110,6 @@ class ResidualBlock(nn.Module):
         self.dropout2 = nn.Dropout(0.25)
         self.batchnorm2 = nn.BatchNorm1d(output_channel)
 
-
     def forward(self, x):
         residual = x[:, :, self.input_seq_length - self.output_seq_length: self.input_seq_length]
         x = self.conv1(x)
@@ -126,9 +125,13 @@ class ResidualBlock(nn.Module):
 
 
 class SkywalkCnnV1(pl.LightningModule):
-    def __init__(self, kernel_size: int, in_channels: int, seq_length: int, test_dataset_names: [str]):
+    def __init__(self, kernel_size: int, in_channels: int, seq_length: int, val_dataset_names: [str],
+                 test_dataset_names: [str], session_type='all'):
         super(SkywalkCnnV1, self).__init__()
+        self.save_hyperparameters()
+        self.val_dataset_names = val_dataset_names
         self.test_dataset_names = test_dataset_names
+        self.session_type = session_type
         self.kernel_size = kernel_size
         self.layer1 = nn.Sequential(
             nn.Conv1d(in_channels, 32, kernel_size),
@@ -180,7 +183,7 @@ class SkywalkCnnV1(pl.LightningModule):
         self.log("train/loss", loss)
         return loss
 
-    def validation_step(self, batch, batch_idx, dataset_idx):
+    def validation_step(self, batch, batch_idx, dataset_idx=0):
         x, y, w = batch
         y_hat = self(x)
         # y_same = torch.vstack([1 - y, y]).T
@@ -192,7 +195,7 @@ class SkywalkCnnV1(pl.LightningModule):
     def validation_epoch_end(self, outputs):
         tensorboard = cast(TensorBoardLogger, self.logger).experiment
 
-        val_prefix = "val/"
+        val_prefix = f"val-{self.session_type}/"
         val_loss_total = 0
         val_acc_total = 0
         val_samples = 0
@@ -205,8 +208,11 @@ class SkywalkCnnV1(pl.LightningModule):
         val_off_set_offsets = []
         val_drops = []
 
+        if not isinstance(outputs[0], list):
+            outputs = [outputs]
+
         for dataset_idx, dataset_outputs in enumerate(outputs):
-            dataset_prefix = f"val-all/{self.test_dataset_names[dataset_idx]}/"
+            dataset_prefix = f"val-full/{self.val_dataset_names[dataset_idx]}/"
             y_list = []
             y_hat_list = []
             w_list = []
@@ -229,15 +235,19 @@ class SkywalkCnnV1(pl.LightningModule):
 
             result = process_clicks(total_y, estimated_y)
             total_true_clicks, total_false_clicks, total_missed_clicks, total_detected_clicks, \
-                on_set_offsets, off_set_offsets, drops = result
+            on_set_offsets, off_set_offsets, drops = result
             assert len(on_set_offsets) == len(off_set_offsets) == total_detected_clicks
             self.log(f"{dataset_prefix}loss", loss)
             self.log(f"{dataset_prefix}accuracy", accuracy)
-            self.log(f"{dataset_prefix}FP-P", math.nan if total_true_clicks == 0 else total_false_clicks / total_true_clicks)
-            self.log(f"{dataset_prefix}TP-P", math.nan if total_true_clicks == 0 else total_detected_clicks / total_true_clicks)
+            self.log(f"{dataset_prefix}FP-P",
+                     math.nan if total_true_clicks == 0 else total_false_clicks / total_true_clicks)
+            self.log(f"{dataset_prefix}TP-P",
+                     math.nan if total_true_clicks == 0 else total_detected_clicks / total_true_clicks)
             self.log(f"{dataset_prefix}drops-P", math.nan if total_true_clicks == 0 else len(drops) / total_true_clicks)
-            self.log(f"{dataset_prefix}std-onset", math.nan if total_detected_clicks < 2 else statistics.stdev(on_set_offsets))
-            self.log(f"{dataset_prefix}std-offset", math.nan if total_detected_clicks < 2 else statistics.stdev(off_set_offsets))
+            self.log(f"{dataset_prefix}std-onset",
+                     math.nan if total_detected_clicks < 2 else statistics.stdev(on_set_offsets))
+            self.log(f"{dataset_prefix}std-offset",
+                     math.nan if total_detected_clicks < 2 else statistics.stdev(off_set_offsets))
 
             if total_detected_clicks > 1:
                 tensorboard.add_histogram(f"{dataset_prefix}onset", np.array(on_set_offsets), self.current_epoch)
@@ -293,7 +303,7 @@ class SkywalkCnnV1(pl.LightningModule):
         std_offset = math.nan if val_total_detected_clicks < 2 else statistics.stdev(val_off_set_offsets)
         self.log(f"{val_prefix}std-offset", std_offset)
 
-        print(f"[for notion reporting]"
+        print(f"[for notion reporting] + {self.session_type}"
               f"\t{tp_p:.4f}\t{fp_p:.4f}\t{drops_p:.4f}\t{val_loss:.4f}\t{std_onset:.4f}\t{std_offset:.4f}")
 
         if val_total_detected_clicks > 1:

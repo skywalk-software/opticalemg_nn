@@ -11,6 +11,8 @@ Created on Tues Mar  8 13:09:52 2022
 # from functions_general import sample_n_sessions
 
 # %% Top-Level Imports
+from typing import Union, List
+
 import pandas as pd
 import numpy as np
 import random
@@ -92,16 +94,23 @@ def sample_n_sessions(sessions_list, n_sessions):
     return sessions_list[len(sessions_list) - n_sessions:], sessions_list[len(sessions_list) - n_sessions:]
 
 
-def sample_percentage_sessions(sessions_list: [pd.DataFrame], percentage: float):
+def sample_percentage_sessions(sessions_list: [pd.DataFrame], percentage: Union[float, List[float]]):
+    if isinstance(percentage, float):
+        percentage = [percentage]
     all_samples = sum(len(session) for session in sessions_list)
-    before_samples = all_samples * (1 - percentage)
-    sampled = []
-    not_sampled = []
+    before_samples = all_samples * (1 - sum(percentage))
+    divider = [before_samples]
+    accumulated_percentage = 0
+    for this_percentage in percentage:
+        accumulated_percentage += this_percentage
+        divider += [before_samples + all_samples * accumulated_percentage]
+    samples = [[]]
     length = 0
     for session in sessions_list:
-        if length + len(session) < before_samples:
-            not_sampled += [session]
-        else:
-            sampled += [session]
+        while length + len(session) > divider[len(samples) - 1]:
+            samples += [[]]
+        samples[-1] += [session]
         length += len(session)
-    return sampled, not_sampled
+    for _ in range(len(percentage) + 1 - len(samples)):
+        samples += [[]]
+    return samples[1:] + [samples[0]]

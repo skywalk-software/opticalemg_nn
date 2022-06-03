@@ -11,9 +11,14 @@ from os import listdir
 from os.path import isfile, join
 
 # import matplotlib.pyplot as plt
+import copy
+from typing import cast
+
 import numpy as np
 # %% Top-Level Imports
 import pandas as pd
+import torch
+import tqdm
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -25,7 +30,7 @@ from classes import Trial
 # %% Local Imports
 from classes import User
 from functions_general import sample_percentage_sessions
-from functions_ml_torch import SkywalkCnnV1
+from functions_ml_torch import SkywalkCnnV1, SkywalkDataset
 from functions_ml_torch import get_predictions
 from functions_ml_torch import timeseries_from_sessions_list
 from functions_postprocessing import apply_flag_pulses
@@ -167,6 +172,23 @@ if __name__ == '__main__':
         tylerchen.get_trials(date='2022-03-06', trial_type='passive_motion_no_task'))
     background_phone_sessions_list = tylerchen.get_sessions(
         tylerchen.get_trials(trial_type='passive_motion_using_phone'))
+
+    jackieyang = User('jackieyang')
+    dirpath = '../dataset/jackieyang-guitar-hero-tap-hold/'
+    allFiles = [f for f in listdir(dirpath) if (isfile(join(dirpath, f)) and f.endswith(".h5"))]
+    for filepath in allFiles:
+        jackieyang.append_trial(Trial(dirpath + filepath))
+    jackieyang_sessions_list = jackieyang.get_sessions(jackieyang.get_trials())
+
+    tianshili = User('tianshili')
+    dirpath = '../dataset/tianshili-guitar-hero-tap-hold/'
+    allFiles = [f for f in listdir(dirpath) if (isfile(join(dirpath, f)) and f.endswith(".h5"))]
+    for filepath in allFiles:
+        temp_trial = Trial(dirpath + filepath)
+        temp_trial.user_id = 'tianshili'
+        tianshili.append_trial(temp_trial)
+    tianshili_sessions_list = tianshili.get_sessions(tianshili.get_trials())
+
     for i in range(len(background_sessions_list)):
         background_sessions_list[i]['contact'] = pd.DataFrame(np.zeros(background_sessions_list[i]['skywalk'].shape[0]),
                                                               index=background_sessions_list[i]['skywalk'].index)
@@ -206,16 +228,27 @@ if __name__ == '__main__':
     model_list = [None] * num_repeats
 
     # Create lists of training and testing sessions by sampling from the sessions lists
-    simple_test_sessions, simple_train_sessions = sample_percentage_sessions(simple_sessions_list, 0.2)
-    drag_test_sessions, drag_train_sessions = sample_percentage_sessions(drag_sessions_list, 0.2)
-    real_test_sessions, real_train_sessions = sample_percentage_sessions(realistic_sessions_list, 0.2)
-    # real_background_test_sessions, real_background_train_sessions = sample_n_sessions(realistic_background_sessions_list, 1)
-    rotation_test_sessions, rotation_train_sessions = sample_percentage_sessions(rotation_sessions_list, 0.2)
-    flexion_extension_test_sessions, flexion_extension_train_sessions = sample_percentage_sessions(
-        flexion_extension_sessions_list, 0.2)
-    allmixed_test_sessions, allmixed_train_sessions = sample_percentage_sessions(
-        allmixed_sessions_list, 0.2)
-    open_close_test_sessions, open_close_train_sessions = sample_percentage_sessions(open_close_sessions_list, 0.2)
+    simple_val_sessions, simple_test_sessions, simple_train_sessions = sample_percentage_sessions(simple_sessions_list,
+                                                                                                  [0.2, 0.2])
+    drag_val_sessions, drag_test_sessions, drag_train_sessions = sample_percentage_sessions(drag_sessions_list,
+                                                                                            [0.2, 0.2])
+    real_val_sessions, real_test_sessions, real_train_sessions = sample_percentage_sessions(realistic_sessions_list,
+                                                                                            [0.2, 0.2])
+    # real_background_val_sessions, real_background_test_sessions, real_background_train_sessions = sample_n_sessions(realistic_background_sessions_list, 1)
+    rotation_val_sessions, rotation_test_sessions, rotation_train_sessions = sample_percentage_sessions(
+        rotation_sessions_list, [0.2, 0.2])
+    flexion_extension_val_sessions, flexion_extension_test_sessions, flexion_extension_train_sessions = sample_percentage_sessions(
+        flexion_extension_sessions_list, [0.2, 0.2])
+    allmixed_val_sessions, allmixed_test_sessions, allmixed_train_sessions = sample_percentage_sessions(
+        allmixed_sessions_list, [0.2, 0.2])
+    open_close_val_sessions, open_close_test_sessions, open_close_train_sessions = sample_percentage_sessions(
+        open_close_sessions_list, [0.2, 0.2])
+
+    jackieyang_val_sessions, jackieyang_test_sessions, jackieyang_train_sessions = sample_percentage_sessions(
+        jackieyang_sessions_list, [0.2, 0.2])
+    tianshili_val_sessions, tianshili_test_sessions, tianshili_train_sessions = sample_percentage_sessions(
+        tianshili_sessions_list,
+        [0.2, 0.2])  # tianshi's has 11 sessions total, arbitrarily choosing 5 sessions for test
 
     # Concatenate training sessions, append test sessions into a metalist to get trial-type-specific metrics
     # train_sessions_list = simple_train_sessions + drag_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions + allmixed_background_sessions_list + allmixed_background_sessions_day2_list + background_sessions_list
@@ -223,80 +256,156 @@ if __name__ == '__main__':
     #                             "flexion_extension_test_sessions", "open_close_test_sessions", "allmixed_test_sessions"]
     # test_sessions_metalist = [simple_test_sessions, drag_test_sessions, rotation_test_sessions,
     #                           flexion_extension_test_sessions, open_close_test_sessions, allmixed_test_sessions]
-    train_sessions_list = simple_train_sessions + real_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions
+    tyler_train_sessions_list = simple_train_sessions + real_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions
+    jackie_train_sessions_list = jackieyang_train_sessions
+    tianshi_train_sessions_list = tianshili_train_sessions
     test_sessions_meta_names = ["real_test_sessions", "simple_test_sessions", "flexion_extension_test_sessions",
-                                "open_close_test_sessions", "allmixed_test_sessions"]
+                                "open_close_test_sessions", "allmixed_test_sessions", "jackieyang_test_sessions",
+                                "tianshili_test_sessions"]
     test_sessions_metalist = [real_test_sessions, simple_test_sessions, flexion_extension_test_sessions,
-                              open_close_test_sessions, allmixed_test_sessions]
+                              open_close_test_sessions, allmixed_test_sessions, jackieyang_test_sessions,
+                              tianshili_test_sessions]
+    val_sessions_meta_names = ["real_val_sessions", "simple_val_sessions", "flexion_extension_val_sessions",
+                               "open_close_val_sessions", "allmixed_val_sessions", "jackieyang_val_sessions",
+                               "tianshili_val_sessions"]
+    val_sessions_metalist = [real_val_sessions, simple_val_sessions, flexion_extension_val_sessions,
+                             open_close_val_sessions, allmixed_val_sessions, jackieyang_val_sessions,
+                             tianshili_val_sessions]
     n_test = len(test_sessions_metalist)
-    if n_test != len(test_sessions_metalist):
-        raise ValueError("n_test (", n_test, ") must equal length of test_sessions_metalist (",
-                         len(test_sessions_metalist), ")")
-    test_descriptions = ['simple', 'drag', 'rotation', 'flexion', 'open_close', 'allmixed']
-
-    # Shuffle training list
-    random.shuffle(train_sessions_list)
+    n_val = len(val_sessions_metalist)
 
     # 1. Scale skywalk data by the LED power (adds new column 'skywalk_powerscaled')
     power_scale = False  # leave as false until issues are fixed
     if power_scale:
-        power_scale_skywalk_data(train_sessions_list)
+        power_scale_skywalk_data(tyler_train_sessions_list)
+        power_scale_skywalk_data(jackie_train_sessions_list)
+        power_scale_skywalk_data(tianshi_train_sessions_list)
         for i in range(len(test_sessions_metalist)):
             power_scale_skywalk_data(test_sessions_metalist[i])
+        for i in range(len(val_sessions_metalist)):
+            power_scale_skywalk_data(val_sessions_metalist[i])
 
     # 2. Resample IMU data (makes a copy)
-    train_sessions_list = resample_imu_data(train_sessions_list)
+    tyler_train_sessions_list = resample_imu_data(tyler_train_sessions_list)
+    jackie_train_sessions_list = resample_imu_data(jackie_train_sessions_list)
+    tianshi_train_sessions_list = resample_imu_data(tianshi_train_sessions_list)
     for i in range(len(test_sessions_metalist)):
         test_sessions_metalist[i] = resample_imu_data(test_sessions_metalist[i])
+    for i in range(len(val_sessions_metalist)):
+        val_sessions_metalist[i] = resample_imu_data(val_sessions_metalist[i])
 
     # X. Take derivative of accel_data (if relevant)
 
     # 3. Subtract mean from skywalk data (makes a copy)
-    train_sessions_list = mean_subtract_skywalk_data(train_sessions_list, mean, power_scale)
+    tyler_train_sessions_list = mean_subtract_skywalk_data(tyler_train_sessions_list, mean, power_scale)
+    jackie_train_sessions_list = mean_subtract_skywalk_data(jackie_train_sessions_list, mean, power_scale)
+    tianshi_train_sessions_list = mean_subtract_skywalk_data(tianshi_train_sessions_list, mean, power_scale)
     for i in range(len(test_sessions_metalist)):
         test_sessions_metalist[i] = mean_subtract_skywalk_data(test_sessions_metalist[i], mean, power_scale)
+    for i in range(len(val_sessions_metalist)):
+        val_sessions_metalist[i] = mean_subtract_skywalk_data(val_sessions_metalist[i], mean, power_scale)
 
     # 4. Correct IMU indices after mean subtraction happened
-    train_sessions_list = correct_imu_indices(train_sessions_list, mean)
+    tyler_train_sessions_list = correct_imu_indices(tyler_train_sessions_list, mean)
+    jackie_train_sessions_list = correct_imu_indices(jackie_train_sessions_list, mean)
+    tianshi_train_sessions_list = correct_imu_indices(tianshi_train_sessions_list, mean)
     for i in range(len(test_sessions_metalist)):
         test_sessions_metalist[i] = correct_imu_indices(test_sessions_metalist[i], mean)
+    for i in range(len(val_sessions_metalist)):
+        val_sessions_metalist[i] = correct_imu_indices(val_sessions_metalist[i], mean)
+
+    train_sessions_list = tyler_train_sessions_list + jackie_train_sessions_list + tianshi_train_sessions_list
 
     scaled = True
     sequence_length = 243
     # IMU_data = ['accelerometer', 'gyroscope']
     IMU_data = None
     test_dataset, test_data_array, test_labels_array = [None] * n_test, [None] * n_test, [None] * n_test
+    val_dataset, val_data_array, val_labels_array = [None] * n_val, [None] * n_val, [None] * n_val
+
     if not scaled:
         # Convert data into timeseries
         train_dataset, train_data_array, train_labels_array = \
             timeseries_from_sessions_list(train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
+        tyler_train_dataset, tyler_train_data_array, tyler_train_labels_array = \
+            timeseries_from_sessions_list(tyler_train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
+        tianshi_train_dataset, tianshi_train_data_array, tianshi_train_labels_array = \
+            timeseries_from_sessions_list(tianshi_train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
+        jackie_train_dataset, jackie_train_data_array, jackie_train_labels_array = \
+            timeseries_from_sessions_list(jackie_train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
         for i in range(n_test):
             test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                 test_sessions_metalist[i], sequence_length, imu_data=IMU_data)
+        for i in range(n_val):
+            val_dataset[i], val_data_array[i], val_labels_array[i] = timeseries_from_sessions_list(
+                val_sessions_metalist[i], sequence_length, imu_data=IMU_data)
 
     else:
         # Convert data into timeseries
-        train_dataset, train_data_array, train_labels_array, saved_scaler = timeseries_from_sessions_list(
-            train_sessions_list, sequence_length, fit_scaler=True, imu_data=IMU_data, shuffle=True)
+        train_dataset, train_data_array, train_labels_array, saved_scaler = \
+            timeseries_from_sessions_list(train_sessions_list, sequence_length, fit_scaler=True, imu_data=IMU_data,
+                                          shuffle=True)
+        tyler_train_dataset, tyler_train_data_array, tyler_train_labels_array = \
+            timeseries_from_sessions_list(tyler_train_sessions_list, sequence_length, scaler_to_use=saved_scaler,
+                                          imu_data=IMU_data, shuffle=True)
+        tianshi_train_dataset, tianshi_train_data_array, tianshi_train_labels_array = \
+            timeseries_from_sessions_list(tianshi_train_sessions_list, sequence_length, scaler_to_use=saved_scaler,
+                                          imu_data=IMU_data, shuffle=True)
+        jackie_train_dataset, jackie_train_data_array, jackie_train_labels_array = \
+            timeseries_from_sessions_list(tianshi_train_sessions_list, sequence_length, scaler_to_use=saved_scaler,
+                                          imu_data=IMU_data, shuffle=True)
         for i in range(n_test):
             test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                 test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
+        for i in range(n_val):
+            val_dataset[i], val_data_array[i], val_labels_array[i] = timeseries_from_sessions_list(
+                val_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
-    num_workers = 4
+    num_workers = 0
     train_dataloader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=num_workers, pin_memory=True)
+    tyler_train_dataloader = DataLoader(tyler_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
+                                        pin_memory=True)
+    tianshi_train_dataloader = DataLoader(tianshi_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
+                                          pin_memory=True)
+    jackie_train_dataloader = DataLoader(jackie_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
+                                         pin_memory=True)
     test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset in
                        test_dataset]
+    tyler_test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+                             in
+                             test_dataset[:-2]]
+    jackie_test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+                              in
+                              [test_dataset[-2]]]
+    tianshi_test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+                               in
+                               [test_dataset[-1]]]
+    val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset in
+                      val_dataset]
+    tyler_val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset in
+                            val_dataset[:-2]]
+    jackie_val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+                             in
+                             [val_dataset[-2]]]
+    tianshi_val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+                              in
+                              [val_dataset[-1]]]
 
     kernel_size = 3
     epochs = 30
+    next_epochs = 20
 
-    data, labels, weights = next(iter(train_dataloader))
+    data, labels, weights = next(iter(tyler_train_dataloader))
     numpy_data = data.cpu().numpy()
     numpy_labels = labels.cpu().numpy()
     batch_size, seq_length, n_features = numpy_data.shape[0], numpy_data.shape[1], numpy_data.shape[2]
-    model = SkywalkCnnV1(kernel_size, n_features, seq_length, test_sessions_meta_names)
+    model = SkywalkCnnV1(kernel_size, n_features, seq_length, val_sessions_meta_names, test_sessions_meta_names)
 
     print(summary(model, data.shape[1:], device='cpu'))
+
+    CKPT_PATH = "./temp.ckpt"
+
+    # %% training
     logger = TensorBoardLogger('logs')
 
     trainer = Trainer(
@@ -309,88 +418,60 @@ if __name__ == '__main__':
         ]
     )
 
-    # # Run learning rate finder
-    # lr_finder = trainer.tuner.lr_find(model, train_dataloaders=train_dataloader)
+    trainer.fit(model, train_dataloaders=tyler_train_dataloader, val_dataloaders=tyler_val_dataloader)
+    # Save a model at CKPT_PATH
+    trainer.save_checkpoint(CKPT_PATH)
+
+    # %% Test the model metrics
+    trainer = Trainer(
+        resume_from_checkpoint=CKPT_PATH
+    )
+    model.load_from_checkpoint(CKPT_PATH)
+    print("test result:")
+    print(trainer.validate(model, dataloaders=tyler_test_dataloader))
+
+    # %% predict using the first dataset in tyler's val set
+    trainer = Trainer(
+        resume_from_checkpoint=CKPT_PATH
+    )
+    model.load_from_checkpoint(CKPT_PATH)
+    dataloader = tyler_val_dataloader[0]
+    dataloader_name = val_sessions_meta_names[0]
+    print(f"plotting on {dataloader_name}")
+    device = torch.device("cpu" if sys.platform == 'darwin' else "cuda")
+    model_device = model.to(device)
+    y_all = []
+    y_hat_all = []
+    model_device.eval()
+    for x, y, w in tqdm.tqdm(dataloader):
+        y_hat = model_device(x.to(device)).detach().cpu()
+        y_hat_all += [y_hat]
+        y_all += [y]
+
+    y_all_np = torch.cat(y_all).numpy()
+    y_hat_all_np = torch.cat(y_hat_all).numpy()
+    # dirty hack to retrieve data from dataloader
+    x_all_np = cast(SkywalkDataset, dataloader.dataset).data_array[len(y_all_np)].numpy()
+
+    fig = plot_predictions(y_hat_all_np, y_all_np, x_all_np)
+    fig.show()
+
+    # # For future multi user training
+
+    # model_tyler = copy.deepcopy(model)
+    # model_tyler.val_dataset_names = model_tyler.val_dataset_names[: -2]
+    # model_tyler.session_type = "tyler"
+    # trainer_tyler = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
+    # trainer_tyler.fit(model_tyler, train_dataloaders=tyler_train_dataloader, val_dataloaders=tyler_val_dataloader)
     #
-    # # Results can be found in
-    # print(lr_finder.results)
+    # model_jackie = copy.deepcopy(model)
+    # model_jackie.val_dataset_names = [model_jackie.val_dataset_names[-2]]
+    # model_jackie.session_type = "jackie"
+    # trainer_jackie = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
+    # trainer_jackie.fit(model_jackie, train_dataloaders=jackie_train_dataloader, val_dataloaders=jackie_val_dataloader)
     #
-    # # Plot with
-    # fig = lr_finder.plot(suggest=True)
-    # fig.show()
-    #
-    # # Pick point based on plot, or get suggestion
-    # new_lr = lr_finder.suggestion()
-    #
-    # # update hparams of the model
-    # model.hparams.lr = new_lr
-    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=test_dataloader)
-
-    # %% EXAMINE DATA
-    # colorlist = ['b'] * 8 + ['orange'] * 25
-    # alphalist = [1] * 8 + [0.1] * 25
-    # for i in range(0, stddf.shape[1]):
-    #     plt.plot(stddf.iloc[:,i], alpha = alphalist[i])
-    # plt.title("StdDev")
-    # plt.legend(stddf.columns)
-
-    # session_descriptions = []
-    # all_trials = tylerchen.get_trials()
-    # for i in range(len(all_trials)):
-    #     if all_trials[i].trial_type == 'guitar_hero_tap_hold':
-    #         session_descriptions = session_descriptions + [all_trials[i].notes] * all_trials[i].num_sessions
-    #     else:
-    #         session_descriptions = session_descriptions + [all_trials[i].trial_type] * all_trials[i].num_sessions
-    # print(session_descriptions)
-    #
-    # fig, axs = plt.subplots(3)
-    # axs[0].bar(range(20), np.mean(np.array(meandf)[:,0:20], axis=0))
-    # axs[0].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(meandf)[:,20:], axis=0).tolist(), alpha = 0.5)
-    # axs[0].set_title('Mean')
-    # axs[1].bar(range(20), np.mean(np.array(stddf)[:,0:20], axis=0))
-    # axs[1].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(stddf)[:,20:], axis=0).tolist(), alpha = 0.5)
-    # axs[1].set_title('StdDev')
-    # axs[2].bar(range(20), np.mean(np.array(peakdf)[:,0:20], axis=0))
-    # axs[2].bar([3,4,5,6,7,9,10,13,15,16,17,18,19],np.mean(np.array(peakdf)[:,20:], axis=0).tolist(), alpha = 0.5)
-    # axs[2].set_title('Peakdiff (max - min)')
-    # fig.xlabel('channel')
-
-    # %% SAVE MODEL AND PLOT RESULTS
-    i = 0
-    j = 5
-    # predictions = get_predictions(model_list[i], test_dataset[j])
-    # plot_predictions(predictions, test_labels_array[j], test_data_array[j])
-
-    predictions = get_predictions(model, train_dataset)
-    plot_predictions(predictions, train_labels_array, train_data_array)
-    # model_list[0].save("../models/2022_03_17_TimeseriesCNN_HL2_v1")
-
-    # %% Random stuff
-    # plt.plot(test_sessions_metalist[0][0]['skywalk'].iloc[:-11])
-    # plt.plot(test_sessions_metalist[0][0]['contact'].iloc[11:][0]*15000)
-    i = 0
-    for batch in train_dataset:
-        inputs, targets = batch
-        # if i < 10:
-        #     i += 1
-        #     continue
-        if targets[31] != 1:
-            continue
-        plot_predictions(np.array([0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]), np.array(targets[2:13]),
-                         np.array(inputs[2]))
-        # fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2)
-        # ax1.plot(inputs[17])
-        # ax2.plot(inputs[18])
-        # ax3.plot(inputs[19])
-        # ax4.plot(inputs[20])
-        # ax5.plot(inputs[21])
-        # ax6.plot(inputs[22])
-        print(targets)
-        break
-
-    # for data, labels in train_dataset.take(1):  # only take first element of dataset
-    #     numpy_data = data.numpy()
-    #     numpy_labels = labels.numpy()
-    # batch_size, sequence_length, n_features = numpy_data.shape[0], numpy_data.shape[1], numpy_data.shape[2]
-
-    # %% Random stuff
+    # model_tianshi = copy.deepcopy(model)
+    # model_tianshi.val_dataset_names = [model_tianshi.val_dataset_names[-1]]
+    # model_tianshi.session_type = "tianshi"
+    # trainer_tianshi = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
+    # trainer_tianshi.fit(model_tianshi, train_dataloaders=tianshi_train_dataloader, val_dataloaders=tianshi_val_dataloader)
