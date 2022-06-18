@@ -257,17 +257,20 @@ class SkywalkCnnV1(pl.LightningModule):
                 tensorboard.add_histogram(f"{dataset_prefix}drops", np.array(drops), self.current_epoch)
 
             length = len(estimated_y)
-            if length < 1000:
-                start = 0
-                end = length
-            else:
-                start = length // 2 - 500
-                end = length // 2 + 500
+            # if length < 1000:
+            #     start = 0
+            #     end = length
+            # else:
+            #     start = length // 2 - 500
+            #     end = length // 2 + 500
+            start = 0
+            end = length
             fig: matplotlib.figure = plot_predictions(estimated_y[start:end].numpy(), total_y[start:end].numpy(), None)
             # fig: matplotlib.figure = plot_predictions(estimated_y.numpy(), total_y.numpy(), None)
             # fig.show()
 
             buf = io.BytesIO()
+            fig.set_size_inches((length // 100, 3))
             fig.savefig(buf, format='jpeg')
             buf.seek(0)
             image = PIL.Image.open(buf)

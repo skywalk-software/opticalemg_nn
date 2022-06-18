@@ -444,14 +444,15 @@ if __name__ == '__main__':
     y_hat_all = []
     model_device.eval()
     for x, y, w in tqdm.tqdm(dataloader):
-        y_hat = model_device(x.to(device)).detach().cpu()
+        y_hat_float = model_device(x.to(device)).detach().cpu()
+        y_hat = (y_hat_float[:, 0] < y_hat_float[:, 1]).long()
         y_hat_all += [y_hat]
         y_all += [y]
 
     y_all_np = torch.cat(y_all).numpy()
     y_hat_all_np = torch.cat(y_hat_all).numpy()
     # dirty hack to retrieve data from dataloader
-    x_all_np = cast(SkywalkDataset, dataloader.dataset).data_array[len(y_all_np)].numpy()
+    x_all_np = cast(SkywalkDataset, dataloader.dataset).data_array[:len(y_all_np)].numpy()
 
     fig = plot_predictions(y_hat_all_np, y_all_np, x_all_np)
     fig.show()
