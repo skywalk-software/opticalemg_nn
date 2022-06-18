@@ -361,7 +361,7 @@ if __name__ == '__main__':
             val_dataset[i], val_data_array[i], val_labels_array[i] = timeseries_from_sessions_list(
                 val_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
 
-    num_workers = 0
+    num_workers = 4
     train_dataloader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=num_workers, pin_memory=True)
     tyler_train_dataloader = DataLoader(tyler_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
                                         pin_memory=True)
@@ -392,7 +392,7 @@ if __name__ == '__main__':
                               [val_dataset[-1]]]
 
     kernel_size = 3
-    epochs = 30
+    epochs = 10
     next_epochs = 20
 
     data, labels, weights = next(iter(tyler_train_dataloader))
@@ -409,7 +409,8 @@ if __name__ == '__main__':
     logger = TensorBoardLogger('logs')
 
     trainer = Trainer(
-        accelerator="cpu" if sys.platform == 'darwin' else "auto",  # temp fix for mps not working
+        # accelerator="cpu" if sys.platform == 'darwin' else "auto",  # temp fix for mps not working
+        accelerator="auto",
         max_epochs=epochs,
         logger=logger,
         val_check_interval=1.0,
@@ -418,60 +419,66 @@ if __name__ == '__main__':
         ]
     )
 
-    trainer.fit(model, train_dataloaders=tyler_train_dataloader, val_dataloaders=tyler_val_dataloader)
+    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     # Save a model at CKPT_PATH
     trainer.save_checkpoint(CKPT_PATH)
 
-    # %% Test the model metrics
-    trainer = Trainer(
-        resume_from_checkpoint=CKPT_PATH
-    )
-    model.load_from_checkpoint(CKPT_PATH)
-    print("test result:")
-    print(trainer.validate(model, dataloaders=tyler_test_dataloader))
-
-    # %% predict using the first dataset in tyler's val set
-    trainer = Trainer(
-        resume_from_checkpoint=CKPT_PATH
-    )
-    model.load_from_checkpoint(CKPT_PATH)
-    dataloader = tyler_val_dataloader[0]
-    dataloader_name = val_sessions_meta_names[0]
-    print(f"plotting on {dataloader_name}")
-    device = torch.device("cpu" if sys.platform == 'darwin' else "cuda")
-    model_device = model.to(device)
-    y_all = []
-    y_hat_all = []
-    model_device.eval()
-    for x, y, w in tqdm.tqdm(dataloader):
-        y_hat = model_device(x.to(device)).detach().cpu()
-        y_hat_all += [y_hat]
-        y_all += [y]
-
-    y_all_np = torch.cat(y_all).numpy()
-    y_hat_all_np = torch.cat(y_hat_all).numpy()
-    # dirty hack to retrieve data from dataloader
-    x_all_np = cast(SkywalkDataset, dataloader.dataset).data_array[len(y_all_np)].numpy()
-
-    fig = plot_predictions(y_hat_all_np, y_all_np, x_all_np)
-    fig.show()
-
-    # # For future multi user training
-
-    # model_tyler = copy.deepcopy(model)
-    # model_tyler.val_dataset_names = model_tyler.val_dataset_names[: -2]
-    # model_tyler.session_type = "tyler"
-    # trainer_tyler = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
-    # trainer_tyler.fit(model_tyler, train_dataloaders=tyler_train_dataloader, val_dataloaders=tyler_val_dataloader)
+    # # %% Test the model metrics
+    # trainer = Trainer(
+    #     resume_from_checkpoint=CKPT_PATH
+    # )
+    # model.load_from_checkpoint(CKPT_PATH)
+    # print("test result:")
+    # print(trainer.validate(model, dataloaders=tyler_test_dataloader))
     #
-    # model_jackie = copy.deepcopy(model)
-    # model_jackie.val_dataset_names = [model_jackie.val_dataset_names[-2]]
-    # model_jackie.session_type = "jackie"
-    # trainer_jackie = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
-    # trainer_jackie.fit(model_jackie, train_dataloaders=jackie_train_dataloader, val_dataloaders=jackie_val_dataloader)
+    # # %% predict using the first dataset in tyler's val set
+    # trainer = Trainer(
+    #     resume_from_checkpoint=CKPT_PATH
+    # )
+    # model.load_from_checkpoint(CKPT_PATH)
+    # dataloader = tyler_val_dataloader[0]
+    # dataloader_name = val_sessions_meta_names[0]
+    # print(f"plotting on {dataloader_name}")
+    # device = torch.device("cpu" if sys.platform == 'darwin' else "cuda")
+    # model_device = model.to(device)
+    # y_all = []
+    # y_hat_all = []
+    # model_device.eval()
+    # for x, y, w in tqdm.tqdm(dataloader):
+    #     y_hat = model_device(x.to(device)).detach().cpu()
+    #     y_hat_all += [y_hat]
+    #     y_all += [y]
     #
-    # model_tianshi = copy.deepcopy(model)
-    # model_tianshi.val_dataset_names = [model_tianshi.val_dataset_names[-1]]
-    # model_tianshi.session_type = "tianshi"
-    # trainer_tianshi = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
-    # trainer_tianshi.fit(model_tianshi, train_dataloaders=tianshi_train_dataloader, val_dataloaders=tianshi_val_dataloader)
+    # y_all_np = torch.cat(y_all).numpy()
+    # y_hat_all_np = torch.cat(y_hat_all).numpy()
+    # # dirty hack to retrieve data from dataloader
+    # x_all_np = cast(SkywalkDataset, dataloader.dataset).data_array[len(y_all_np)].numpy()
+    #
+    # fig = plot_predictions(y_hat_all_np, y_all_np, x_all_np)
+    # fig.show()
+
+    # For future multi user training
+
+    model_tyler = copy.deepcopy(model)
+    model_tyler.val_dataset_names = model_tyler.val_dataset_names[: -2]
+    model_tyler.session_type = "tyler"
+    trainer_tyler = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
+    trainer_tyler.fit(model_tyler, train_dataloaders=tyler_train_dataloader, val_dataloaders=tyler_val_dataloader)
+
+    model_jackie = copy.deepcopy(model)
+    model_jackie.val_dataset_names = [model_jackie.val_dataset_names[-2]]
+    model_jackie.session_type = "jackie"
+    trainer_jackie = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
+    trainer_jackie.fit(model_jackie, train_dataloaders=jackie_train_dataloader, val_dataloaders=jackie_val_dataloader)
+
+    model_tianshi = copy.deepcopy(model)
+    model_tianshi.val_dataset_names = [model_tianshi.val_dataset_names[-1]]
+    model_tianshi.session_type = "tianshi"
+    trainer_tianshi = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
+    trainer_tianshi.fit(model_tianshi, train_dataloaders=tianshi_train_dataloader, val_dataloaders=tianshi_val_dataloader)
+
+    #%% testing
+
+    print(trainer_tyler.validate(model_tyler, dataloaders=tyler_test_dataloader))
+    print(trainer_jackie.validate(model_jackie, dataloaders=jackie_test_dataloader))
+    print(trainer_tianshi.validate(model_tianshi, dataloaders=tianshi_test_dataloader))
