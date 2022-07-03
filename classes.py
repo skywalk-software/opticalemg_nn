@@ -172,7 +172,7 @@ class Trial(object):
         known_trials_data['tap'] = ['skywalk', 'accelerometer', 'gyroscope', 'magnetometer', 'quaternion', 'contact',
                                     'user_prompt']
         known_trials_data['guitar_hero_tap_hold'] = ['skywalk', 'skywalk_power', 'accelerometer', 'gyroscope',
-                                                     'magnetometer', 'quaternion', 'contact']
+                                                     'magnetometer', 'quaternion', 'contact', 'force']
         known_trials_data['passive_motion_using_phone'] = ['skywalk', 'skywalk_power', 'accelerometer', 'gyroscope',
                                                            'magnetometer', 'quaternion']
         known_trials_data['passive_motion_no_task'] = ['skywalk', 'skywalk_power', 'accelerometer', 'gyroscope',
@@ -226,13 +226,15 @@ class Trial(object):
                         channel_names = [data_stream + '_' + x for x in channel_counter]
                     elif data_stream == 'user_prompt':
                         channel_names = ['swipe_direction', 'clicklocx', 'clicklocy', 'mode']
-
-                    # Create the array without timestamps
-                    self.session_data[i_s][data_stream] = pd.DataFrame(
-                        np.array(f[sessions_list[i_s]][(data_stream + '_data')][()]), columns=channel_names)
-                    # Add timestamps in the index
-                    self.session_data[i_s][data_stream].index = np.array(
-                        f[sessions_list[i_s]][(data_stream + '_timestamps')][()])
+                    
+                    # Don't use force data if firmware isn't 2.6.00 or greater
+                    if not (self.firmware_version == 'v0.0' and data_stream == 'force'):
+                        # Create the array without timestamps
+                        self.session_data[i_s][data_stream] = pd.DataFrame(
+                            np.array(f[sessions_list[i_s]][(data_stream + '_data')][()]), columns=channel_names)
+                        # Add timestamps in the index
+                        self.session_data[i_s][data_stream].index = np.array(
+                            f[sessions_list[i_s]][(data_stream + '_timestamps')][()])
 
     def __repr__(self):
         return f'Trial <trial_type={self.trial_type}, user_id={self.user_id}, date={self.date}, ' \

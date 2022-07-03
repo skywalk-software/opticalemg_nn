@@ -137,6 +137,7 @@ if __name__ == '__main__':
         tylerchen.append_trial(Trial(dirpath + filepath))
 
     # Define subsets of sessions
+    gaze_sessions_list = tylerchen.get_sessions(tylerchen.get_trials(date='2022-07-02'))
     simple_sessions_list = tylerchen.get_sessions(
         tylerchen.get_trials(date='2022-03-06', trial_type='guitar_hero_tap_hold',
                              notes='consistent hand position, no noise'))
@@ -228,6 +229,7 @@ if __name__ == '__main__':
     model_list = [None] * num_repeats
 
     # Create lists of training and testing sessions by sampling from the sessions lists
+    gaze_val_sessions, gaze_test_sessions, gaze_train_sessions = sample_percentage_sessions(gaze_sessions_list, [0.2, 0.2])
     simple_val_sessions, simple_test_sessions, simple_train_sessions = sample_percentage_sessions(simple_sessions_list,
                                                                                                   [0.2, 0.2])
     drag_val_sessions, drag_test_sessions, drag_train_sessions = sample_percentage_sessions(drag_sessions_list,
