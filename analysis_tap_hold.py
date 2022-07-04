@@ -36,7 +36,7 @@ from functions_ml_torch import timeseries_from_sessions_list
 from functions_postprocessing import apply_flag_pulses
 from functions_postprocessing import plot_predictions
 from functions_preprocessing import mean_subtract_skywalk_data
-
+#%%
 if __name__ == '__main__':
 
     # %% FUNCTION - RESAMPLES ONE TIMESTAMPED ARRAY TO THE SHAPE OF ANOTHER
@@ -258,39 +258,46 @@ if __name__ == '__main__':
     #                             "flexion_extension_test_sessions", "open_close_test_sessions", "allmixed_test_sessions"]
     # test_sessions_metalist = [simple_test_sessions, drag_test_sessions, rotation_test_sessions,
     #                           flexion_extension_test_sessions, open_close_test_sessions, allmixed_test_sessions]
-    tyler_train_sessions_list = simple_train_sessions + real_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions
-    jackie_train_sessions_list = jackieyang_train_sessions
-    tianshi_train_sessions_list = tianshili_train_sessions
-    test_sessions_meta_names = ["real_test_sessions", "simple_test_sessions", "flexion_extension_test_sessions",
-                                "open_close_test_sessions", "allmixed_test_sessions", "jackieyang_test_sessions",
-                                "tianshili_test_sessions"]
-    test_sessions_metalist = [real_test_sessions, simple_test_sessions, flexion_extension_test_sessions,
-                              open_close_test_sessions, allmixed_test_sessions, jackieyang_test_sessions,
-                              tianshili_test_sessions]
-    val_sessions_meta_names = ["real_val_sessions", "simple_val_sessions", "flexion_extension_val_sessions",
-                               "open_close_val_sessions", "allmixed_val_sessions", "jackieyang_val_sessions",
-                               "tianshili_val_sessions"]
-    val_sessions_metalist = [real_val_sessions, simple_val_sessions, flexion_extension_val_sessions,
-                             open_close_val_sessions, allmixed_val_sessions, jackieyang_val_sessions,
-                             tianshili_val_sessions]
+    # tyler_train_sessions_list = simple_train_sessions + real_train_sessions + open_close_train_sessions + allmixed_train_sessions + flexion_extension_train_sessions
+    # jackie_train_sessions_list = jackieyang_train_sessions
+    # tianshi_train_sessions_list = tianshili_train_sessions
+    # test_sessions_meta_names = ["real_test_sessions", "simple_test_sessions", "flexion_extension_test_sessions",
+    #                             "open_close_test_sessions", "allmixed_test_sessions", "jackieyang_test_sessions",
+    #                             "tianshili_test_sessions"]
+    # test_sessions_metalist = [real_test_sessions, simple_test_sessions, flexion_extension_test_sessions,
+    #                           open_close_test_sessions, allmixed_test_sessions, jackieyang_test_sessions,
+    #                           tianshili_test_sessions]
+    # val_sessions_meta_names = ["real_val_sessions", "simple_val_sessions", "flexion_extension_val_sessions",
+    #                            "open_close_val_sessions", "allmixed_val_sessions", "jackieyang_val_sessions",
+    #                            "tianshili_val_sessions"]
+    # val_sessions_metalist = [real_val_sessions, simple_val_sessions, flexion_extension_val_sessions,
+    #                          open_close_val_sessions, allmixed_val_sessions, jackieyang_val_sessions,
+    #                          tianshili_val_sessions]
+    train_sessions_list = gaze_train_sessions
+    test_sessions_meta_names = ["gaze_test_sessions"]
+    test_sessions_metalist = [gaze_test_sessions]
+    val_sessions_meta_names = ["gaze_val_sessions"]
+    val_sessions_metalist = [gaze_val_sessions]
     n_test = len(test_sessions_metalist)
     n_val = len(val_sessions_metalist)
 
     # 1. Scale skywalk data by the LED power (adds new column 'skywalk_powerscaled')
     power_scale = False  # leave as false until issues are fixed
     if power_scale:
-        power_scale_skywalk_data(tyler_train_sessions_list)
-        power_scale_skywalk_data(jackie_train_sessions_list)
-        power_scale_skywalk_data(tianshi_train_sessions_list)
+        power_scale_skywalk_data(train_sessions_list)
+        # power_scale_skywalk_data(tyler_train_sessions_list)
+        # power_scale_skywalk_data(jackie_train_sessions_list)
+        # power_scale_skywalk_data(tianshi_train_sessions_list)
         for i in range(len(test_sessions_metalist)):
             power_scale_skywalk_data(test_sessions_metalist[i])
         for i in range(len(val_sessions_metalist)):
             power_scale_skywalk_data(val_sessions_metalist[i])
 
     # 2. Resample IMU data (makes a copy)
-    tyler_train_sessions_list = resample_imu_data(tyler_train_sessions_list)
-    jackie_train_sessions_list = resample_imu_data(jackie_train_sessions_list)
-    tianshi_train_sessions_list = resample_imu_data(tianshi_train_sessions_list)
+    train_sessions_list = resample_imu_data(train_sessions_list)
+    # tyler_train_sessions_list = resample_imu_data(tyler_train_sessions_list)
+    # jackie_train_sessions_list = resample_imu_data(jackie_train_sessions_list)
+    # tianshi_train_sessions_list = resample_imu_data(tianshi_train_sessions_list)
     for i in range(len(test_sessions_metalist)):
         test_sessions_metalist[i] = resample_imu_data(test_sessions_metalist[i])
     for i in range(len(val_sessions_metalist)):
@@ -299,26 +306,29 @@ if __name__ == '__main__':
     # X. Take derivative of accel_data (if relevant)
 
     # 3. Subtract mean from skywalk data (makes a copy)
-    tyler_train_sessions_list = mean_subtract_skywalk_data(tyler_train_sessions_list, mean, power_scale)
-    jackie_train_sessions_list = mean_subtract_skywalk_data(jackie_train_sessions_list, mean, power_scale)
-    tianshi_train_sessions_list = mean_subtract_skywalk_data(tianshi_train_sessions_list, mean, power_scale)
+    train_sessions_list = mean_subtract_skywalk_data(train_sessions_list, mean, power_scale)
+    # tyler_train_sessions_list = mean_subtract_skywalk_data(tyler_train_sessions_list, mean, power_scale)
+    # jackie_train_sessions_list = mean_subtract_skywalk_data(jackie_train_sessions_list, mean, power_scale)
+    # tianshi_train_sessions_list = mean_subtract_skywalk_data(tianshi_train_sessions_list, mean, power_scale)
     for i in range(len(test_sessions_metalist)):
         test_sessions_metalist[i] = mean_subtract_skywalk_data(test_sessions_metalist[i], mean, power_scale)
     for i in range(len(val_sessions_metalist)):
         val_sessions_metalist[i] = mean_subtract_skywalk_data(val_sessions_metalist[i], mean, power_scale)
 
     # 4. Correct IMU indices after mean subtraction happened
-    tyler_train_sessions_list = correct_imu_indices(tyler_train_sessions_list, mean)
-    jackie_train_sessions_list = correct_imu_indices(jackie_train_sessions_list, mean)
-    tianshi_train_sessions_list = correct_imu_indices(tianshi_train_sessions_list, mean)
+    train_sessions_list = correct_imu_indices(train_sessions_list, mean)
+    # tyler_train_sessions_list = correct_imu_indices(tyler_train_sessions_list, mean)
+    # jackie_train_sessions_list = correct_imu_indices(jackie_train_sessions_list, mean)
+    # tianshi_train_sessions_list = correct_imu_indices(tianshi_train_sessions_list, mean)
     for i in range(len(test_sessions_metalist)):
         test_sessions_metalist[i] = correct_imu_indices(test_sessions_metalist[i], mean)
     for i in range(len(val_sessions_metalist)):
         val_sessions_metalist[i] = correct_imu_indices(val_sessions_metalist[i], mean)
 
-    train_sessions_list = tyler_train_sessions_list + jackie_train_sessions_list + tianshi_train_sessions_list
+    # train_sessions_list = tyler_train_sessions_list + jackie_train_sessions_list + tianshi_train_sessions_list
+    train_sessions_list = train_sessions_list
 
-    scaled = True
+    scaled = False
     sequence_length = 243
     # IMU_data = ['accelerometer', 'gyroscope']
     IMU_data = None
@@ -329,12 +339,12 @@ if __name__ == '__main__':
         # Convert data into timeseries
         train_dataset, train_data_array, train_labels_array = \
             timeseries_from_sessions_list(train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
-        tyler_train_dataset, tyler_train_data_array, tyler_train_labels_array = \
-            timeseries_from_sessions_list(tyler_train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
-        tianshi_train_dataset, tianshi_train_data_array, tianshi_train_labels_array = \
-            timeseries_from_sessions_list(tianshi_train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
-        jackie_train_dataset, jackie_train_data_array, jackie_train_labels_array = \
-            timeseries_from_sessions_list(jackie_train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
+        # tyler_train_dataset, tyler_train_data_array, tyler_train_labels_array = \
+        #     timeseries_from_sessions_list(tyler_train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
+        # tianshi_train_dataset, tianshi_train_data_array, tianshi_train_labels_array = \
+        #     timeseries_from_sessions_list(tianshi_train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
+        # jackie_train_dataset, jackie_train_data_array, jackie_train_labels_array = \
+        #     timeseries_from_sessions_list(jackie_train_sessions_list, sequence_length, imu_data=IMU_data, shuffle=True)
         for i in range(n_test):
             test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                 test_sessions_metalist[i], sequence_length, imu_data=IMU_data)
@@ -347,15 +357,15 @@ if __name__ == '__main__':
         train_dataset, train_data_array, train_labels_array, saved_scaler = \
             timeseries_from_sessions_list(train_sessions_list, sequence_length, fit_scaler=True, imu_data=IMU_data,
                                           shuffle=True)
-        tyler_train_dataset, tyler_train_data_array, tyler_train_labels_array = \
-            timeseries_from_sessions_list(tyler_train_sessions_list, sequence_length, scaler_to_use=saved_scaler,
-                                          imu_data=IMU_data, shuffle=True)
-        tianshi_train_dataset, tianshi_train_data_array, tianshi_train_labels_array = \
-            timeseries_from_sessions_list(tianshi_train_sessions_list, sequence_length, scaler_to_use=saved_scaler,
-                                          imu_data=IMU_data, shuffle=True)
-        jackie_train_dataset, jackie_train_data_array, jackie_train_labels_array = \
-            timeseries_from_sessions_list(tianshi_train_sessions_list, sequence_length, scaler_to_use=saved_scaler,
-                                          imu_data=IMU_data, shuffle=True)
+        # tyler_train_dataset, tyler_train_data_array, tyler_train_labels_array = \
+        #     timeseries_from_sessions_list(tyler_train_sessions_list, sequence_length, scaler_to_use=saved_scaler,
+        #                                   imu_data=IMU_data, shuffle=True)
+        # tianshi_train_dataset, tianshi_train_data_array, tianshi_train_labels_array = \
+        #     timeseries_from_sessions_list(tianshi_train_sessions_list, sequence_length, scaler_to_use=saved_scaler,
+        #                                   imu_data=IMU_data, shuffle=True)
+        # jackie_train_dataset, jackie_train_data_array, jackie_train_labels_array = \
+        #     timeseries_from_sessions_list(tianshi_train_sessions_list, sequence_length, scaler_to_use=saved_scaler,
+        #                                   imu_data=IMU_data, shuffle=True)
         for i in range(n_test):
             test_dataset[i], test_data_array[i], test_labels_array[i] = timeseries_from_sessions_list(
                 test_sessions_metalist[i], sequence_length, scaler_to_use=saved_scaler, imu_data=IMU_data)
@@ -365,39 +375,39 @@ if __name__ == '__main__':
 
     num_workers = 0
     train_dataloader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=num_workers, pin_memory=True)
-    tyler_train_dataloader = DataLoader(tyler_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
-                                        pin_memory=True)
-    tianshi_train_dataloader = DataLoader(tianshi_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
-                                          pin_memory=True)
-    jackie_train_dataloader = DataLoader(jackie_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
-                                         pin_memory=True)
+    # tyler_train_dataloader = DataLoader(tyler_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
+    #                                     pin_memory=True)
+    # tianshi_train_dataloader = DataLoader(tianshi_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
+    #                                       pin_memory=True)
+    # jackie_train_dataloader = DataLoader(jackie_train_dataset, batch_size=128, shuffle=True, num_workers=num_workers,
+    #                                      pin_memory=True)
     test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset in
                        test_dataset]
-    tyler_test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
-                             in
-                             test_dataset[:-2]]
-    jackie_test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
-                              in
-                              [test_dataset[-2]]]
-    tianshi_test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
-                               in
-                               [test_dataset[-1]]]
+    # tyler_test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+    #                          in
+    #                          test_dataset[:-2]]
+    # jackie_test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+    #                           in
+    #                           [test_dataset[-2]]]
+    # tianshi_test_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+    #                            in
+    #                            [test_dataset[-1]]]
     val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset in
                       val_dataset]
-    tyler_val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset in
-                            val_dataset[:-2]]
-    jackie_val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
-                             in
-                             [val_dataset[-2]]]
-    tianshi_val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
-                              in
-                              [val_dataset[-1]]]
+    # tyler_val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset in
+    #                         val_dataset[:-2]]
+    # jackie_val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+    #                          in
+    #                          [val_dataset[-2]]]
+    # tianshi_val_dataloader = [DataLoader(dataset, batch_size=128, num_workers=num_workers, pin_memory=True) for dataset
+    #                           in
+    #                           [val_dataset[-1]]]
 
     kernel_size = 3
-    epochs = 30
+    epochs = 5
     next_epochs = 20
 
-    data, labels, weights = next(iter(tyler_train_dataloader))
+    data, labels, weights = next(iter(train_dataloader))
     numpy_data = data.cpu().numpy()
     numpy_labels = labels.cpu().numpy()
     batch_size, seq_length, n_features = numpy_data.shape[0], numpy_data.shape[1], numpy_data.shape[2]
@@ -405,7 +415,7 @@ if __name__ == '__main__':
 
     print(summary(model, data.shape[1:], device='cpu'))
 
-    CKPT_PATH = "./temp.ckpt"
+    CKPT_PATH = "./tylerchen_gaze_20220704.ckpt"
 
     # %% training
     logger = TensorBoardLogger('logs')
@@ -420,7 +430,7 @@ if __name__ == '__main__':
         ]
     )
 
-    trainer.fit(model, train_dataloaders=tyler_train_dataloader, val_dataloaders=tyler_val_dataloader)
+    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     # Save a model at CKPT_PATH
     trainer.save_checkpoint(CKPT_PATH)
 
@@ -430,18 +440,21 @@ if __name__ == '__main__':
     )
     model.load_from_checkpoint(CKPT_PATH)
     print("test result:")
-    print(trainer.validate(model, dataloaders=tyler_test_dataloader))
+    print(trainer.validate(model, dataloaders=test_dataloader))
 
     # %% predict using the first dataset in tyler's val set
     trainer = Trainer(
         resume_from_checkpoint=CKPT_PATH
     )
     model.load_from_checkpoint(CKPT_PATH)
-    dataloader = tyler_val_dataloader[0]
+    dataloader = val_dataloader[0]
     dataloader_name = val_sessions_meta_names[0]
     print(f"plotting on {dataloader_name}")
-    device = torch.device("cpu" if sys.platform == 'darwin' else "cuda")
+    # device = torch.device("cpu" if sys.platform == 'darwin' else "cuda")
+    device = torch.device("cpu")
+
     model_device = model.to(device)
+    
     y_all = []
     y_hat_all = []
     model_device.eval()
