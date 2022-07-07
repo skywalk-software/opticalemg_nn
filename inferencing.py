@@ -1,15 +1,25 @@
 import socket
-import socketserver
 import threading
 
-from tensorflow.python.keras.models import load_model
+import torch
 import numpy as np
 import serial
 from queue import Queue
 
-model = load_model("../models/2022_03_10_TimeseriesCNN_HL2_v0_30731/")
+from ml.functions_ml_torch import SkywalkCnnV1
 
-SERIAL_PORT = "/dev/tty.usbmodem01234567891"
+kernel_size = 3
+epochs = 5
+next_epochs = 20
+n_features = 40
+seq_length = 243
+model = SkywalkCnnV1(kernel_size, n_features, seq_length, [], []).cuda()
+model.load_from_checkpoint("../models/2022_07_04_tylerchen_gaze_5f07f/tylerchen_gaze_20220704.ckpt")
+
+model.eval()
+
+
+SERIAL_PORT = "COM5"
 SERIAL_BAUD_RATE = 115200
 skywalk_serial = serial.Serial(port=SERIAL_PORT, baudrate=SERIAL_BAUD_RATE)
 # read until timeout
@@ -49,6 +59,7 @@ def send_message(message):
     disconnected_clients = []
     for client in clients:
         try:
+            print(message)
             client.send((message + "\n").encode())
         except ConnectionResetError:
             print(f"a client has disconnected")
@@ -83,13 +94,13 @@ while True:
     else:
         if last_decoded_input is None:
             continue
-        last_decoded_input = last_decoded_input + decoded_input[7:]
+        last_decoded_input = last_decoded_input + decoded_input
 
-    if len(last_decoded_input) != 33:
-        print(line)
+    if len(last_decoded_input) != 40:
+        # print(line)
         continue
     input_queue.put(last_decoded_input)
-    if input_queue.qsize() <= 129:
+    if input_queue.qsize() <= 128:
         continue
     else:
         input_queue.get()
@@ -98,19 +109,27 @@ while True:
     mean_subtracted = aggregated_input_np[-1] - np.mean(aggregated_input_np[:-1], axis=0)
 
     mean_subtracted_queue.put(mean_subtracted)
-    if mean_subtracted_queue.qsize() < 12:
+    if mean_subtracted_queue.qsize() <= 243:
         continue
     else:
         mean_subtracted_queue.get()
 
-    input_array = np.array([mean_subtracted_queue.queue])
-    result = model(input_array)
+    if iteration_cnt % 2 != 0:
+        continue
 
-    # print(result[0])
-    if result[0][0] < result[0][1]:
+    input_array = np.array([mean_subtracted_queue.queue])
+    try:
+        result = model(torch.Tensor(input_array).cuda())
+    except Exception:
+        print("error")
+
+    # print(result)
+    if result[0][0] > result[0][1]:
         click = True
+        print("click")
         send_message("1")
     else:
         click = False
+        print("no click")
         send_message("0")
 

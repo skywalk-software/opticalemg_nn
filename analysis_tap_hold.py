@@ -415,7 +415,7 @@ if __name__ == '__main__':
 
     print(summary(model, data.shape[1:], device='cpu'))
 
-    CKPT_PATH = "./tylerchen_gaze_20220704.ckpt"
+    CKPT_PATH = "./saved_model.ckpt"
 
     # %% training
     logger = TensorBoardLogger('logs')
