@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import h5py
 from datetime import datetime
+import yaml
 
 
 # %% CLASS - USER
@@ -180,28 +181,30 @@ class Trial(object):
 
         self.filepath = file_path
 
+        self.metadata = yaml.safe_load(open(file_path.replace('h5', 'yaml'), 'r'))
+        self.metadata["date"] = datetime.strptime(self.metadata['date'], '%Y-%m-%d').date()
+        self.metadata["time"] = datetime.strptime(self.metadata['time'], '%H:%M:%S').time()
+        self.trial_type, self.user_id, self.firmware_version, self.hand, self.notes, self.date, self.time = \
+            self.metadata['trial_type'], self.metadata['user_id'], self.metadata['firmware_version'], \
+            self.metadata['hand'], self.metadata['notes'], self.metadata["date"], self.metadata["time"]
+
         with h5py.File(file_path, "r") as f:
             # Get list of all sessions (note: currently actual session IDs are arbitrary, so we relabel as 0, 1, 2...)
             sessions_list = list(f.keys())
 
-            metadata = list(f['metadata'][()])
+            # metadata = list(f['metadata'][()])
             # Remove metadata from sessions_list to ensure we don't iterate over it
             sessions_list.remove('metadata')
             sessions_list.remove('__DATA_TYPES__')
 
+
+
             # Verify trial type and its constituent data streams are known
-            if metadata[0].decode('utf-8') not in known_trials_data:
+            if self.trial_type not in known_trials_data:
                 raise ValueError("Specified trial_type not a key in known_trials_data. Specified trial_type is:",
-                                 metadata[0].decode('utf-8'), ". Known trials are:", list(known_trials_data.keys()),
+                                 self.trial_type, ". Known trials are:", list(known_trials_data.keys()),
                                  ". Either change trial_type or add new trial_type and data list to "
                                  "known_trials_data.")
-
-            # Init trial metadata
-            self.trial_type, self.user_id, self.firmware_version, self.hand, self.notes = \
-                metadata[0].decode('utf-8'), metadata[1].decode('utf-8'), metadata[3].decode('utf-8'), \
-                metadata[4].decode('utf-8'), metadata[5].decode('utf-8')
-            self.date = datetime.strptime(metadata[2].decode('utf-8'), '%Y-%m-%dT%H-%M-%S').date()
-            self.time = datetime.strptime(metadata[2].decode('utf-8'), '%Y-%m-%dT%H-%M-%S').time()
 
             # Init pandas structure for session data
             self.session_data = pd.DataFrame(columns=list(range(len(sessions_list))),

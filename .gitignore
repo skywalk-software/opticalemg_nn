@@ -1,0 +1,4 @@
+*.pyc
+**/logs/**
+**/lightning_logs/**
+saved_model.ckpt

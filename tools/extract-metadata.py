@@ -19,7 +19,7 @@ def process_files(in_files, out_files, clean):
                 metadata = list(h5['metadata'][()])
                 metadata = [m.decode('utf-8') for m in metadata]
                 metadata = {
-                    "trail_type": metadata[0],
+                    "trial_type": metadata[0],
                     "user_id": metadata[1],
                     "date": str(dt.strptime(metadata[2], '%Y-%m-%dT%H-%M-%S').date()),
                     "time": str(dt.strptime(metadata[2], '%Y-%m-%dT%H-%M-%S').time()),

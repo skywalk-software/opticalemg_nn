@@ -130,7 +130,7 @@ if __name__ == '__main__':
     # 6. Generate timeseries dataset from processed train_data/labels and test_data/labels.
     # 7. Train and test network, report accuracy, plot predictions
     # %% IMPORT DATA
-    dirpath = '../dataset/tylerchen-guitar-hero-tap-hold/'
+    dirpath = '../local-data/tylerchen-guitar-hero-tap-hold/'
     allFiles = [f for f in listdir(dirpath) if (isfile(join(dirpath, f)) and f.endswith(".h5"))]
     tylerchen = User('tylerchen')
     for filepath in allFiles:
@@ -175,14 +175,14 @@ if __name__ == '__main__':
         tylerchen.get_trials(trial_type='passive_motion_using_phone'))
 
     jackieyang = User('jackieyang')
-    dirpath = '../dataset/jackieyang-guitar-hero-tap-hold/'
+    dirpath = '../local-data/jackieyang-guitar-hero-tap-hold/'
     allFiles = [f for f in listdir(dirpath) if (isfile(join(dirpath, f)) and f.endswith(".h5"))]
     for filepath in allFiles:
         jackieyang.append_trial(Trial(dirpath + filepath))
     jackieyang_sessions_list = jackieyang.get_sessions(jackieyang.get_trials())
 
     tianshili = User('tianshili')
-    dirpath = '../dataset/tianshili-guitar-hero-tap-hold/'
+    dirpath = '../local-data/tianshili-guitar-hero-tap-hold/'
     allFiles = [f for f in listdir(dirpath) if (isfile(join(dirpath, f)) and f.endswith(".h5"))]
     for filepath in allFiles:
         temp_trial = Trial(dirpath + filepath)
