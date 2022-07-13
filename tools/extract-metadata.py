@@ -3,6 +3,7 @@ import os
 from tqdm import tqdm
 import h5py
 import yaml
+from datetime import datetime as dt
 
 def is_h5(f):
     return f.endswith(".h5")
@@ -12,12 +13,20 @@ def process_files(in_files, out_files, clean):
         try:
             with h5py.File(f, "r") as h5:
 
-                ## !! @JACKIE Best way to structure metadata in yaml?
-                ## How about __DATATYPES__?
+                ## What to do with __DATATYPES__?
                 ## Want to drop this data from the h5 file too? 
 
                 metadata = list(h5['metadata'][()])
                 metadata = [m.decode('utf-8') for m in metadata]
+                metadata = {
+                    "trail_type": metadata[0],
+                    "user_id": metadata[1],
+                    "date": str(dt.strptime(metadata[2], '%Y-%m-%dT%H-%M-%S').date()),
+                    "time": str(dt.strptime(metadata[2], '%Y-%m-%dT%H-%M-%S').time()),
+                    "firmware_version": metadata[3],
+                    "hand": metadata[4],
+                    "notes": metadata[5],
+                }
                 with open(out_files[i], "w") as of:
                     yaml.safe_dump(metadata, of)
             if clean:
