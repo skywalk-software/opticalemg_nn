@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Created on Tues Mar  8 13:09:52 2022
 
@@ -10,12 +9,15 @@ import sys
 from os import listdir
 from os.path import isfile, join
 
+from omegaconf import DictConfig, OmegaConf
+import hydra
+import logging
+
 # import matplotlib.pyplot as plt
 import copy
 from typing import cast
 
 import numpy as np
-# %% Top-Level Imports
 import pandas as pd
 import torch
 import tqdm
@@ -27,7 +29,7 @@ from torchsummary import summary
 from tslearn.preprocessing import TimeSeriesResampler
 
 from classes import Trial
-# %% Local Imports
+# Local Imports
 from classes import User
 from functions_general import sample_percentage_sessions
 from functions_ml_torch import SkywalkCnnV1, SkywalkDataset
@@ -36,89 +38,94 @@ from functions_ml_torch import timeseries_from_sessions_list
 from functions_postprocessing import apply_flag_pulses
 from functions_postprocessing import plot_predictions
 from functions_preprocessing import mean_subtract_skywalk_data
-#%%
-if __name__ == '__main__':
-
-    # %% FUNCTION - RESAMPLES ONE TIMESTAMPED ARRAY TO THE SHAPE OF ANOTHER
-    # resampled_accelerometer_data = resample_data(session['accelerometer'], session['skywalk'])
-    # TODO make this smarter so it just interleaves the timestamps regardless, and can handle offset
-    #  (e.g. if we truncate the skywalk data with meanSubtract)
-    # TODO realized that it may be easiest to resample using the pandas method
-    def resample_data(data_to_resample, correct_size_data):
-        if (np.abs(data_to_resample.index[0] - correct_size_data.index[0]) > 500000) or (
-                np.abs(data_to_resample.index[-1] - correct_size_data.index[-1]) > 500000):
-            print("WARNING: array start and/or end indices are over 1/2 second off. data_to_resample indices are",
-                  data_to_resample.index, "correct_size_data indices are: ", correct_size_data.index)
-        new_timestamps = TimeSeriesResampler(sz=correct_size_data.shape[0]).fit_transform(data_to_resample.index)
-        new_timestamps = np.squeeze(new_timestamps)
-        resampled_data = pd.DataFrame(index=new_timestamps, columns=data_to_resample.columns)
-
-        for col in data_to_resample.columns:
-            intermediate_resampled_data = TimeSeriesResampler(sz=correct_size_data.shape[0]).fit_transform(
-                data_to_resample[col].values)
-            intermediate_resampled_data = np.squeeze(intermediate_resampled_data)
-            resampled_data[col] = intermediate_resampled_data
-
-        return resampled_data
 
 
-    # FUNCTION - Resamples all IMU data to the size of Skywalk data for a given list of sessions (NOT in place)
-    def resample_imu_data(sessions_list):
-        new_sessions_list = [None] * len(sessions_list)
-        for i_s in range(len(sessions_list)):
-            new_sessions_list[i_s] = sessions_list[i_s].copy()
-            new_sessions_list[i_s]['accelerometer'] = resample_data(new_sessions_list[i_s]['accelerometer'],
-                                                                    new_sessions_list[i_s]['skywalk'])
-            new_sessions_list[i_s]['gyroscope'] = resample_data(new_sessions_list[i_s]['gyroscope'],
+# resampled_accelerometer_data = resample_data(session['accelerometer'], session['skywalk'])
+# TODO make this smarter so it just interleaves the timestamps regardless, and can handle offset
+#  (e.g. if we truncate the skywalk data with meanSubtract)
+# TODO realized that it may be easiest to resample using the pandas method
+def resample_data(data_to_resample, correct_size_data):
+    if (np.abs(data_to_resample.index[0] - correct_size_data.index[0]) > 500000) or (
+            np.abs(data_to_resample.index[-1] - correct_size_data.index[-1]) > 500000):
+        print("WARNING: array start and/or end indices are over 1/2 second off. data_to_resample indices are",
+                data_to_resample.index, "correct_size_data indices are: ", correct_size_data.index)
+    new_timestamps = TimeSeriesResampler(sz=correct_size_data.shape[0]).fit_transform(data_to_resample.index)
+    new_timestamps = np.squeeze(new_timestamps)
+    resampled_data = pd.DataFrame(index=new_timestamps, columns=data_to_resample.columns)
+
+    for col in data_to_resample.columns:
+        intermediate_resampled_data = TimeSeriesResampler(sz=correct_size_data.shape[0]).fit_transform(
+            data_to_resample[col].values)
+        intermediate_resampled_data = np.squeeze(intermediate_resampled_data)
+        resampled_data[col] = intermediate_resampled_data
+
+    return resampled_data
+
+
+# FUNCTION - Resamples all IMU data to the size of Skywalk data for a given list of sessions (NOT in place)
+def resample_imu_data(sessions_list):
+    new_sessions_list = [None] * len(sessions_list)
+    for i_s in range(len(sessions_list)):
+        new_sessions_list[i_s] = sessions_list[i_s].copy()
+        new_sessions_list[i_s]['accelerometer'] = resample_data(new_sessions_list[i_s]['accelerometer'],
                                                                 new_sessions_list[i_s]['skywalk'])
-            new_sessions_list[i_s]['magnetometer'] = resample_data(new_sessions_list[i_s]['magnetometer'],
-                                                                   new_sessions_list[i_s]['skywalk'])
-            new_sessions_list[i_s]['quaternion'] = resample_data(new_sessions_list[i_s]['quaternion'],
-                                                                 new_sessions_list[i_s]['skywalk'])
-        return new_sessions_list
+        new_sessions_list[i_s]['gyroscope'] = resample_data(new_sessions_list[i_s]['gyroscope'],
+                                                            new_sessions_list[i_s]['skywalk'])
+        new_sessions_list[i_s]['magnetometer'] = resample_data(new_sessions_list[i_s]['magnetometer'],
+                                                                new_sessions_list[i_s]['skywalk'])
+        new_sessions_list[i_s]['quaternion'] = resample_data(new_sessions_list[i_s]['quaternion'],
+                                                                new_sessions_list[i_s]['skywalk'])
+    return new_sessions_list
 
 
-    # FNCTION - drops unshared indices between IMU and Skywalk data
-    # TODO combine this function with the resample_data function so it actually interleaves timestamps in an intelligent way
-    def correct_imu_indices(sessions_list, mean_width):
-        new_sessions_list = [None] * len(sessions_list)
-        for i_s in range(len(sessions_list)):
-            new_sessions_list[i_s] = sessions_list[i_s].copy()
-            new_sessions_list[i_s]['accelerometer'] = new_sessions_list[i_s]['accelerometer'].iloc[mean_width:]
-            new_sessions_list[i_s]['gyroscope'] = new_sessions_list[i_s]['gyroscope'].iloc[mean_width:]
-            new_sessions_list[i_s]['magnetometer'] = new_sessions_list[i_s]['magnetometer'].iloc[mean_width:]
-            new_sessions_list[i_s]['quaternion'] = new_sessions_list[i_s]['quaternion'].iloc[mean_width:]
+# FNCTION - drops unshared indices between IMU and Skywalk data
+# TODO combine this function with the resample_data function so it actually interleaves timestamps in an intelligent way
+def correct_imu_indices(sessions_list, mean_width):
+    new_sessions_list = [None] * len(sessions_list)
+    for i_s in range(len(sessions_list)):
+        new_sessions_list[i_s] = sessions_list[i_s].copy()
+        new_sessions_list[i_s]['accelerometer'] = new_sessions_list[i_s]['accelerometer'].iloc[mean_width:]
+        new_sessions_list[i_s]['gyroscope'] = new_sessions_list[i_s]['gyroscope'].iloc[mean_width:]
+        new_sessions_list[i_s]['magnetometer'] = new_sessions_list[i_s]['magnetometer'].iloc[mean_width:]
+        new_sessions_list[i_s]['quaternion'] = new_sessions_list[i_s]['quaternion'].iloc[mean_width:]
 
-        return new_sessions_list
-
-
-    # %% FUNCTION - SCALES SKYWALK DATA BY DIVIDING BY POWER ARRAY ('skywalk_powerscaled')
-    # TODO: Fix bug - the power can switch after the first half of the channels have gone, but not the second!!!
-    # TODO: (cont.) there's currently a 50% chance any single sample gets incorrectly scaled
-    # TODO: fix another bug because the backscatter channels have more power inherently,
-    #       don't want to scale the neighbors back too far
-    def power_scale_skywalk_data(sessions_list):
-        for session in sessions_list:
-            # First generate array equal in length to session['skywalk'] that has the power at each timepoint
-            power_copy = session['skywalk_power'].copy()
-            # Copy power at Ch16 -> Ch17 and Ch18 -> Ch19
-            # Ch17 and Ch19 currently just use 16 and 18 power level in firmware (shared timeslot LED)
-            power_copy[17], power_copy[19] = power_copy[16], power_copy[18]
-            power_copy2 = power_copy.drop(columns=[0, 1, 2, 3, 4, 5, 6])
-            power_copy2.columns += 13
-            extended_power_array = pd.concat([power_copy, power_copy2], axis=1)
-            temp_power_array = pd.DataFrame(np.zeros(session['skywalk'].shape), index=session['skywalk'].index)
-            first_power_update = True
-            for ind in extended_power_array.index:
-                if first_power_update:
-                    temp_power_array[temp_power_array.index <= ind] = np.array(extended_power_array.loc[ind])
-                    first_power_update = False
-                temp_power_array[temp_power_array.index > ind] = np.array(extended_power_array.loc[ind])
-            temp_power_array.columns = session['skywalk'].columns
-            session['skywalk_powerscaled'] = session['skywalk'].div(temp_power_array)
+    return new_sessions_list
 
 
-    # %% DATA IMPORTING, PROCESSING, AND ML PIPELINE
+# FUNCTION - SCALES SKYWALK DATA BY DIVIDING BY POWER ARRAY ('skywalk_powerscaled')
+# TODO: Fix bug - the power can switch after the first half of the channels have gone, but not the second!!!
+# TODO: (cont.) there's currently a 50% chance any single sample gets incorrectly scaled
+# TODO: fix another bug because the backscatter channels have more power inherently,
+#       don't want to scale the neighbors back too far
+def power_scale_skywalk_data(sessions_list):
+    for session in sessions_list:
+        # First generate array equal in length to session['skywalk'] that has the power at each timepoint
+        power_copy = session['skywalk_power'].copy()
+        # Copy power at Ch16 -> Ch17 and Ch18 -> Ch19
+        # Ch17 and Ch19 currently just use 16 and 18 power level in firmware (shared timeslot LED)
+        power_copy[17], power_copy[19] = power_copy[16], power_copy[18]
+        power_copy2 = power_copy.drop(columns=[0, 1, 2, 3, 4, 5, 6])
+        power_copy2.columns += 13
+        extended_power_array = pd.concat([power_copy, power_copy2], axis=1)
+        temp_power_array = pd.DataFrame(np.zeros(session['skywalk'].shape), index=session['skywalk'].index)
+        first_power_update = True
+        for ind in extended_power_array.index:
+            if first_power_update:
+                temp_power_array[temp_power_array.index <= ind] = np.array(extended_power_array.loc[ind])
+                first_power_update = False
+            temp_power_array[temp_power_array.index > ind] = np.array(extended_power_array.loc[ind])
+        temp_power_array.columns = session['skywalk'].columns
+        session['skywalk_powerscaled'] = session['skywalk'].div(temp_power_array)
+
+
+@hydra.main(version_base="1.2.0", config_path="./config", config_name="conf")
+def main(cfg):
+    print(OmegaConf.to_yaml(cfg))
+    logger = logging.getLogger(__name__)
+    logger.info("Info level message")
+    # return
+
+    # DATA IMPORTING, PROCESSING, AND ML PIPELINE
     #
     # 1. Import all data into User and Trial data structure [eventually will be the structure of the database we fetch from]
     # 2. Subselect a list of the trials you want from each user by using the getTrials() method.
@@ -491,3 +498,6 @@ if __name__ == '__main__':
     # model_tianshi.session_type = "tianshi"
     # trainer_tianshi = Trainer(resume_from_checkpoint=CKPT_PATH, max_epochs=next_epochs, logger=TensorBoardLogger('logs'))
     # trainer_tianshi.fit(model_tianshi, train_dataloaders=tianshi_train_dataloader, val_dataloaders=tianshi_val_dataloader)
+
+if __name__ == '__main__':
+    main()
