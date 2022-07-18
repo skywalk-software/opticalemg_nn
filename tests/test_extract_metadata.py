@@ -1,10 +1,11 @@
-import sys, os, shutil
+import os, shutil
 from unittest import TestCase
 from unittest.mock import patch
 import unittest
 import h5py, yaml
-sys.path.append('../tools')
-from extract_metadata import load_files, check_for_existing, process_file
+import sys
+sys.path.append("../utils")
+from extract_metadata import load_files, process_file, check_for_existing
 
 class TestExtractMetrics(TestCase):
 
@@ -97,17 +98,20 @@ class TestExtractMetrics(TestCase):
                 self.assertNotIn(os.path.join(tmp_dir_path, '{}.h5'.format(i)), in_files)
                 self.assertNotIn(os.path.join(tmp_dir_path, '{}.yaml'.format(i)), out_files)
 
+    @patch.dict('extract_metadata.notes_to_trialtype', {"test notes blah blah blah": 3})
     def test_process_file_noclean(self):
         tmp_file_path = os.path.abspath('./tmp.h5')
         target_yaml_path = tmp_file_path.replace('h5', 'yaml')
         target_metadata = {
-            "trial_type": "mytrialtype",
-            "user_id": "luke!!",
+            "datacollector_version": "mytrialtype",
+            "user": "luke!!",
             "date": "2019-01-01",
             "time": "00:00:00",
             "firmware_version": "1.0.0",
             "hand": "right",
             "notes": "test notes blah blah blah",
+            "trial_type": 3,
+            "filename": os.path.basename(tmp_file_path).replace('.h5', ''),
         }
         metadata = [b"mytrialtype", b"luke!!", b"2019-01-01T00-00-00", b"1.0.0", b"right", b"test notes blah blah blah"]
         with h5py.File(tmp_file_path, 'w') as f:
@@ -122,17 +126,20 @@ class TestExtractMetrics(TestCase):
         os.remove(tmp_file_path)
         os.remove(target_yaml_path)
 
+    @patch.dict('extract_metadata.notes_to_trialtype', {"test notes blah blah blah": 3})
     def test_process_file_clean(self):
         tmp_file_path = os.path.abspath('./tmp.h5')
         target_yaml_path = tmp_file_path.replace('h5', 'yaml')
         target_metadata = {
-            "trial_type": "mytrialtype",
-            "user_id": "luke!!",
+            "datacollector_version": "mytrialtype",
+            "user": "luke!!",
             "date": "2019-01-01",
             "time": "00:00:00",
             "firmware_version": "1.0.0",
             "hand": "right",
             "notes": "test notes blah blah blah",
+            "trial_type": 3,
+            "filename": os.path.basename(tmp_file_path).replace('.h5', ''),
         }
         metadata = [b"mytrialtype", b"luke!!", b"2019-01-01T00-00-00", b"1.0.0", b"right", b"test notes blah blah blah"]
         with h5py.File(tmp_file_path, 'w') as f:

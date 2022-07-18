@@ -185,7 +185,7 @@ class Trial(object):
         self.metadata["date"] = datetime.strptime(self.metadata['date'], '%Y-%m-%d').date()
         self.metadata["time"] = datetime.strptime(self.metadata['time'], '%H:%M:%S').time()
         self.trial_type, self.user_id, self.firmware_version, self.hand, self.notes, self.date, self.time = \
-            self.metadata['trial_type'], self.metadata['user_id'], self.metadata['firmware_version'], \
+            self.metadata['collector_version'], self.metadata['user_id'], self.metadata['firmware_version'], \
             self.metadata['hand'], self.metadata['notes'], self.metadata["date"], self.metadata["time"]
 
         with h5py.File(file_path, "r") as f:

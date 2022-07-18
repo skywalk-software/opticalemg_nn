@@ -123,8 +123,6 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
     logger = logging.getLogger(__name__)
     logger.info("Info level message")
-    # return
-
     # DATA IMPORTING, PROCESSING, AND ML PIPELINE
     #
     # 1. Import all data into User and Trial data structure [eventually will be the structure of the database we fetch from]
@@ -137,6 +135,14 @@ def main(cfg):
     # 6. Generate timeseries dataset from processed train_data/labels and test_data/labels.
     # 7. Train and test network, report accuracy, plot predictions
     # %% IMPORT DATA
+
+    ## User --> Trail(s) --> Session(s)
+    ## Trial is anytime you run the data collector (e.g. start guitar hero and hit play)
+    ## Session starts when device is put on. Session ends when device is taken off.
+    ## Treat every session like it's a trial?
+    ## Structured notes defining each session
+    ## In composing a dataset we need to be able to filter on: user, datetime, datacollector_version, activity, firmware_version, etc.
+
     dirpath = '../local-data/tylerchen-guitar-hero-tap-hold/'
     allFiles = [f for f in listdir(dirpath) if (isfile(join(dirpath, f)) and f.endswith(".h5"))]
     tylerchen = User('tylerchen')
