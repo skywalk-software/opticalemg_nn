@@ -5,6 +5,6 @@ hydra:
 defaults:
   - _self_
   - model: convnet
-  - datasets: 
-    - dataset1
-    - dataset2
+  - data: 
+    - tyler
+  - dataset: dataset

@@ -1,24 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tues Mar  8 13:09:52 2022
-
-@author: tyler 
-"""
-
-# %% Functions to import from this file
-# from functions_general import get_rising_edge_indices
-# from functions_general import get_falling_edge_indices
-# from functions_general import sample_n_sessions
-
-# %% Top-Level Imports
-from typing import Union, List
-
 import pandas as pd
 import numpy as np
-import random
 
 
-# %% FUNCTION - GET INDICES OF RISING EDGES FOR DATAFRAME
+# GET INDICES OF RISING EDGES FOR DATAFRAME
 # contact_dataframe = train_sessions_list[0]['contact']
 # which_column = 0
 # rising_edge_timestamps, rising_edge_indices = get_rising_edge_indices(contact_dataframe, which_column)
@@ -53,7 +37,7 @@ def get_rising_edge_indices(input_df, which_column):
         raise TypeError("input_df must be of type np.ndarray or pd.DataFrame")
 
 
-# FUNCTION - GET INDICES OF FALLING EDGES FOR DATAFRAME
+# GET INDICES OF FALLING EDGES FOR DATAFRAME
 # contact_dataframe = train_sessions_list[0]['contact']
 # which_column = 0
 # falling_edge_timestamps, falling_edge_indices = get_falling_edge_indices(contact_dataframe, which_column)
@@ -87,30 +71,3 @@ def get_falling_edge_indices(input_df, which_column):
         return falling_edge_indices
 
 
-# %% FUNCTION - RANDOMLY CHOOSE N SAMPLES FROM SESSIONS
-# test_sessions, train_sessions = sample_n_sessions(sessions_list, n_sessions)
-def sample_n_sessions(sessions_list, n_sessions):
-    # temp = random.sample(sessions_list, len(sessions_list))
-    return sessions_list[len(sessions_list) - n_sessions:], sessions_list[len(sessions_list) - n_sessions:]
-
-
-def sample_percentage_sessions(sessions_list: [pd.DataFrame], percentage: Union[float, List[float]]):
-    if isinstance(percentage, float):
-        percentage = [percentage]
-    all_samples = sum(len(session) for session in sessions_list)
-    before_samples = all_samples * (1 - sum(percentage))
-    divider = [before_samples]
-    accumulated_percentage = 0
-    for this_percentage in percentage:
-        accumulated_percentage += this_percentage
-        divider += [before_samples + all_samples * accumulated_percentage]
-    samples = [[]]
-    length = 0
-    for session in sessions_list:
-        while length + len(session) > divider[len(samples) - 1]:
-            samples += [[]]
-        samples[-1] += [session]
-        length += len(session)
-    for _ in range(len(percentage) + 1 - len(samples)):
-        samples += [[]]
-    return samples[1:] + [samples[0]]

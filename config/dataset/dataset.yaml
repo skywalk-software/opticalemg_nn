@@ -1,0 +1,8 @@
+seq_length: 223
+stride: 1
+contact_channel: 0 # {0: "index", 1: "middle", 2: "ring"}
+stream: skywalk
+train_percent: 0.6
+val_percent: 0.2
+test_percent: 0.2
+## OPTINOAL: add parameterization of specific data streams

@@ -23,12 +23,25 @@ notes = [
     'mid-air tap and hold for raycast, fingers closed'
 ]
 
-## trial_type as str instead of int
-notes_to_trialtype = {
+## *** := notes type not used in previous training script 
+trial_type = [
+    'flexion_extension',
+    'open_close',
+    'idle_motion_band_adjust',      # ***
+    'realistic',
+    'all_mixed',
+    'simple',
+    'mid_air_tap_gaze_pointer',     # ***
+    'nothing',                      # ***   
+    'guitarhero_rotation_motion',   # ***
+    'none',                         # ***
+    'rotation',
+    'drag',
+    'resting_idle_motion',          # ***
+    'mid_air_tap_hold_raycast',     # ***
+]
 
-}
-
-notes_to_trialtype = dict((n, i) for i, n in enumerate(notes))
+notes_to_trialtype = dict(zip(notes, trial_type))
 
 def is_h5(f):
     return f.endswith(".h5")
@@ -40,6 +53,9 @@ def process_file(in_file, out_file, clean):
     with h5py.File(in_file, "r") as h5:
         metadata = list(h5['metadata'][()])
         metadata = [m.decode('utf-8') for m in metadata]
+        keys = list(h5.keys())
+        keys.remove('metadata')
+        keys.remove('__DATA_TYPES__')
         metadata = {
             "datacollector_version": metadata[0],
             "user": metadata[1],
@@ -49,7 +65,8 @@ def process_file(in_file, out_file, clean):
             "hand": metadata[4],
             "notes": metadata[5],
             "trial_type": notes_to_trialtype[metadata[5]],
-            "filename": os.path.basename(in_file).replace(".h5", "")
+            "filename": os.path.basename(in_file).replace(".h5", ""),
+            "session_ids": keys,
         }
         with open(out_file, "w") as of:
             yaml.safe_dump(metadata, of)
@@ -58,7 +75,7 @@ def process_file(in_file, out_file, clean):
             if "metadata" in h5:
                 del h5["metadata"]
             if "__DATATYPES__" in h5:
-                del h5["__DATATYPES__"]
+                del h5["__DATA_TYPES__"]
 
 def load_files(input):
     if not os.path.exists(input):

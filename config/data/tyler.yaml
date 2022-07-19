@@ -1,0 +1,16 @@
+tyler:
+  dirpaths: [/Users/luke/skywalk/local-data,]
+  users: [tylerchen,]
+  datacollector_versions: [guitar_hero_tap_hold,]
+  firmware_versions: null
+  trial_types: [
+    'simple',
+    'realistic',
+    'open_close',
+    'all_mixed',
+    'flexion_extension',
+  ]
+  dates: ['2022-03-06', '2022-03-18',]
+  hands: null
+  exclude_files: []
+  

@@ -1,9 +1,0 @@
-dataset2:
-  dirpaths: [/Users/luke/skywalk/local-data,]
-  users: [tylerchen,]
-  datacollector_versions: [guitar_hero_tap_hold,]
-  firmware_versions: [v0.0]
-  trial_types: [11]
-  dates: ['2022-03-06']
-  hands: [right]
-  exclude_files: []

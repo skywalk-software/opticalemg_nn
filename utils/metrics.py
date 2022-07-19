@@ -1,6 +1,5 @@
 import torch
 
-
 def process_clicks(y: torch.Tensor, y_hat: torch.Tensor):
     assert len(y) == len(y_hat)
 

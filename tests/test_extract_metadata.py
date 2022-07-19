@@ -98,7 +98,7 @@ class TestExtractMetrics(TestCase):
                 self.assertNotIn(os.path.join(tmp_dir_path, '{}.h5'.format(i)), in_files)
                 self.assertNotIn(os.path.join(tmp_dir_path, '{}.yaml'.format(i)), out_files)
 
-    @patch.dict('extract_metadata.notes_to_trialtype', {"test notes blah blah blah": 3})
+    @patch.dict('extract_metadata.notes_to_trialtype', {"test notes blah blah blah": 'trial type'})
     def test_process_file_noclean(self):
         tmp_file_path = os.path.abspath('./tmp.h5')
         target_yaml_path = tmp_file_path.replace('h5', 'yaml')
@@ -110,7 +110,7 @@ class TestExtractMetrics(TestCase):
             "firmware_version": "1.0.0",
             "hand": "right",
             "notes": "test notes blah blah blah",
-            "trial_type": 3,
+            "trial_type": 'trial type',
             "filename": os.path.basename(tmp_file_path).replace('.h5', ''),
         }
         metadata = [b"mytrialtype", b"luke!!", b"2019-01-01T00-00-00", b"1.0.0", b"right", b"test notes blah blah blah"]
@@ -126,7 +126,7 @@ class TestExtractMetrics(TestCase):
         os.remove(tmp_file_path)
         os.remove(target_yaml_path)
 
-    @patch.dict('extract_metadata.notes_to_trialtype', {"test notes blah blah blah": 3})
+    @patch.dict('extract_metadata.notes_to_trialtype', {"test notes blah blah blah": 'trial type'})
     def test_process_file_clean(self):
         tmp_file_path = os.path.abspath('./tmp.h5')
         target_yaml_path = tmp_file_path.replace('h5', 'yaml')
@@ -138,7 +138,7 @@ class TestExtractMetrics(TestCase):
             "firmware_version": "1.0.0",
             "hand": "right",
             "notes": "test notes blah blah blah",
-            "trial_type": 3,
+            "trial_type": 'trial type',
             "filename": os.path.basename(tmp_file_path).replace('.h5', ''),
         }
         metadata = [b"mytrialtype", b"luke!!", b"2019-01-01T00-00-00", b"1.0.0", b"right", b"test notes blah blah blah"]
