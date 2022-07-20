@@ -75,7 +75,6 @@ class SkywalkCnnV1(pl.LightningModule):
         self.hparams.lr = 0.001
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = torch.transpose(x, 1, 2)
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
@@ -98,7 +97,7 @@ class SkywalkCnnV1(pl.LightningModule):
         }
 
     def training_step(self, batch, batch_idx):
-        x, y, w = batch
+        x, y, ts, meta = batch
         y_hat = self(x)
         raw_loss = self.loss(y_hat, y)
         loss = torch.sum(raw_loss * w) / torch.sum(w)
