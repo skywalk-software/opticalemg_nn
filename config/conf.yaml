@@ -12,8 +12,10 @@ defaults:
 
 deterministic: true
 dev_run: false
+load_model_ckpt: null
 progress_bar: true
 resume_training: false
 print_summary: true
 detect_anomaly: true
 val_freq: 1
+epochs: 20

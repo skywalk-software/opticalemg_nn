@@ -241,9 +241,12 @@ def get_datasets(data_cfg, dataset_cfg):
 def get_dataloaders(data_cfg, dataset_cfg, dataloader_cfg):
     train, val, test = get_datasets(data_cfg, dataset_cfg)
     train_loader = DataLoader(
-        train, batch_size=dataloader_cfg.batch_size, shuffle=True, pin_memory=dataloader_cfg.pin_memory,)
+        train, batch_size=dataloader_cfg.batch_size, shuffle=True, 
+        pin_memory=dataloader_cfg.pin_memory, num_workers=dataloader_cfg.num_workers)
     val_loader = DataLoader(
-        val, batch_size=dataloader_cfg.batch_size, shuffle=False, pin_memory=dataloader_cfg.pin_memory,)
+        val, batch_size=dataloader_cfg.batch_size, shuffle=False, 
+        pin_memory=dataloader_cfg.pin_memory, num_workers=dataloader_cfg.num_workers)
     test_loader = DataLoader(
-        test, batch_size=dataloader_cfg.batch_size, shuffle=False, pin_memory=dataloader_cfg.pin_memory,)
+        test, batch_size=dataloader_cfg.batch_size, shuffle=False, 
+        pin_memory=dataloader_cfg.pin_memory, num_workers=dataloader_cfg.num_workers)
     return train_loader, val_loader, test_loader

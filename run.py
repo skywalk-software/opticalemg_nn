@@ -48,11 +48,11 @@ def main(cfg):
         deterministic=cfg.deterministic,
         fast_dev_run=cfg.dev_run,
         enable_progress_bar=cfg.progress_bar,
-        resume_from_checkpoint=cfg.resume_training,
         enable_model_summary=cfg.print_summary,
         detect_anomaly=cfg.detect_anomaly,
         check_val_every_n_epoch=cfg.val_freq,
-        callbacks=callbacks
+        callbacks=callbacks,
+        max_epochs=cfg.epochs,
     )
 
     trainer.fit(
