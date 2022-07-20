@@ -1,8 +1,6 @@
 from tqdm import tqdm
 from boltons.fileutils import iter_find_files
 import pandas as pd
-import hydra
-from omegaconf import OmegaConf
 import logging
 import yaml
 import os
@@ -10,13 +8,10 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from torch.utils.data import random_split
-from sklearn import preprocessing
 from functools import partial
 from datetime import datetime as dt
 import yaml
 import h5py
-
-logger = logging.getLogger(__name__)
 
 CLICK_REGION = 10
 NONE_CLICK_REGION_WEIGHT = 2
@@ -64,6 +59,7 @@ class Trial(object):
                 v = data['skywalk_timestamps']
                 self.nir_srs[sess] = (v[1:] - v[:-1]).mean() / 1000
 
+    ## This can + should be optimized or done offline
     @staticmethod
     def trial_stats(trials, stream, seq_len, stride=1):
         data_arr = []
@@ -91,6 +87,7 @@ class SessionDataset(Dataset):
         self.nir_ts = self.data[f"{self.data_stream}_timestamps"]
         self.contact_d = self.data["contact_data"]
         self.contact_ts = self.data["contact_timestamps"]
+        self.contact_idxs = np.searchsorted(self.contact_ts, self.nir_ts)
         self.contact_channel = contact_channel
         self.data_idxs = list(range(0, self.nir_d.shape[0] - self.seq_len, self.stride))
         self.metadata = metadata
@@ -102,16 +99,20 @@ class SessionDataset(Dataset):
         start = self.data_idxs[idx]
         end = start + self.seq_len
         data = torch.from_numpy(self.nir_d[start:end, :])
-        return data.permute(1, 0)
+        ts = torch.from_numpy(self.nir_ts[start:end])
+        contact_idxs = self.contact_idxs[start:end]
+        contact = torch.from_numpy(
+            self.contact_d[contact_idxs, self.contact_channel])
+        return data.permute(1, 0), contact, ts
 
 class SkywalkDataset(Dataset):
-    def __init__(self, trials, seq_length, stride, data_stream, contact_channel, norm=None):
+    def __init__(self, trials, seq_length, stride, data_stream, contact_channel, stand=None):
         self.data_stream = data_stream
         self.seq_length = seq_length
         self.stride = stride
         self.contact_channel = contact_channel
         self.trials = trials
-        self.norm = norm
+        self.stand = stand
         datasets = []
         for trial in self.trials:
             for sess, data in trial.data.items():
@@ -129,8 +130,8 @@ class SkywalkDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        if self.norm:
-            return self.norm(data=self.dataset[idx])
+        if self.stand:
+            return self.stand(data=self.dataset[idx])
         else:
             return self.dataset[idx]
 
@@ -208,12 +209,12 @@ def get_datasets(data_cfg, dataset_cfg):
     _, allfiles = get_files_from_all(data_cfg)
     trials = [Trial(f) for f in allfiles]
 
-    if dataset_cfg.normalize:
+    if dataset_cfg.standardize:
         mu, sigma = Trial.trial_stats(
             trials, dataset_cfg.stream, dataset_cfg.seq_length, dataset_cfg.stride)
-        norm = partial(standardize, mu=mu, sigma=sigma)
+        stand = partial(standardize, mu=mu, sigma=sigma)
     else:
-        norm = None
+        stand = None
 
     dataset = SkywalkDataset(
         trials, 
@@ -221,10 +222,16 @@ def get_datasets(data_cfg, dataset_cfg):
         dataset_cfg.stride, 
         dataset_cfg.stream, 
         dataset_cfg.contact_channel,
-        norm=norm
+        stand=stand
     )
+
+    train_count, val_count, test_count = list(map(lambda x : round(x * len(dataset)),\
+            [dataset_cfg.train_percent, dataset_cfg.val_percent, dataset_cfg.test_percent]))
+
     train, val, test = random_split(
-        dataset, [dataset_cfg.train_percent, dataset_cfg.val_percent, dataset_cfg.test_percent])
+        dataset, 
+        [train_count, val_count, test_count]
+    )
     
     return train, val, test
 
@@ -237,18 +244,3 @@ def get_dataloaders(data_cfg, dataset_cfg, dataloader_cfg):
     test_loader = DataLoader(
         test, batch_size=dataloader_cfg.batch_size, shuffle=False, pin_memory=dataloader_cfg.pin_memory,)
     return train_loader, val_loader, test_loader
-
-
-@hydra.main(version_base="1.2.0", config_path="../config", config_name="conf")
-def main(cfg):
-    print(OmegaConf.to_yaml(cfg))
-
-
-
-
-
-
-
-if __name__ == '__main__':
-    main()
-

@@ -8,3 +8,6 @@ defaults:
   - data: 
     - tyler
   - dataset: dataset
+
+deterministic: true
+seed: 0

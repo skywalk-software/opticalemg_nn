@@ -5,4 +5,5 @@ stream: skywalk
 train_percent: 0.6
 val_percent: 0.2
 test_percent: 0.2
+standardize: false
 ## OPTINOAL: add parameterization of specific data streams

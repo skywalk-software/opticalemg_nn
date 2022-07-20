@@ -1,22 +1,7 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tues Mar  8 13:09:52 2022
-
-@author: tyler
-"""
-
-# %% Functions to import from this file
-# from functions_postprocessing import plot_predictions
-# from functions_postprocessing import apply_flag_pulses
-
-# %% Top-Level Imports
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
-# %% Local Imports
-from functions_general import get_rising_edge_indices
-from functions_general import get_falling_edge_indices
+from .helpers import get_rising_edge_indices, get_falling_edge_indices
 
 # %% FUNCTION - CHECK ACCURACY OF THE MODEL (currently unused, defaulting to apply_flag_pulses)
 # TODO needs to output RMS and max onset timing error, RMS and max offset timing error

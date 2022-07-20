@@ -11,85 +11,119 @@ from torchvision.transforms import ToTensor
 import PIL, matplotlib
 from matplotlib import pyplot as plt
 from pytorch_lightning.loggers import TensorBoardLogger
-from functions_postprocessing import plot_predictions
-from metrics import process_clicks
+from utils.postprocessing import plot_predictions
+from utils.metrics import process_clicks
 
-
+def build_skywalkcnnv1(model_cfg, optimizer_cfg):
+    pass
 
 class ResidualBlock(nn.Module):
-    def __init__(self, input_seq_length, input_channel, output_channel, middle_channel, dilation,
-                 kernel_size):
-        super().__init__()
-        self.input_seq_length = input_seq_length
-        self.output_seq_length = input_seq_length - (kernel_size - 1) * dilation
-        self.input_channel = input_channel
-        self.output_channel = output_channel
-        self.middle_channel = middle_channel
+    def __init__(
+        self, 
+        input_len, 
+        channels,
+        dilation,
+        stride,
+        kernel_size,
+        dropout,
+    ):
+        super().__init__()        
+        self.input_len= input_len
+        self.output_len = input_len - (kernel_size - 1) * dilation
+        self.channels = channels
         self.dilation = dilation
         self.kernel_size = kernel_size
-        self.conv1 = nn.Conv1d(input_channel, middle_channel, kernel_size, dilation=self.dilation)
-        self.dropout1 = nn.Dropout(0.25)
-        self.batchnorm1 = nn.BatchNorm1d(middle_channel)
-        self.conv2 = nn.Conv1d(middle_channel, output_channel, 1)
-        self.dropout2 = nn.Dropout(0.25)
-        self.batchnorm2 = nn.BatchNorm1d(output_channel)
+        self.stride = stride
+        self.dropout = dropout
+        self.layers = nn.ModuleList([])
+        for i in range(len(channels) - 1):
+            self.layers.append(
+                nn.Conv1d(
+                    in_channels=self.channels[i], 
+                    out_channels=self.channels[i + 1], 
+                    kernel_size=kernel_size,
+                    dilation=dilation,
+                    stride=stride,
+                ),
+                nn.BatchNorm1d(self.channels[i + 1]),
+                nn.ReLU(),
+                nn.Dropout(self.dropout)
+            )
+        self.network = nn.Sequential(*self.layers)
 
     def forward(self, x):
-        residual = x[:, :, self.input_seq_length - self.output_seq_length: self.input_seq_length]
-        x = self.conv1(x)
-        x = self.batchnorm1(x)
-        x = F.relu(x)
-        x = self.dropout1(x)
-        x = self.conv2(x)
-        x = self.batchnorm2(x)
-        x = F.relu(x)
-        x = self.dropout2(x)
+        residual = x[:, :, self.input_len - self.output_len: self.input_len]
+        x = self.network(x)
         x += residual
         return x
 
 
 class SkywalkCnnV1(pl.LightningModule):
-    def __init__(self, kernel_size: int, in_channels: int, seq_length: int, val_dataset_names: [str],
-                 test_dataset_names: [str], session_type='all'):
+    def __init__(
+        self, 
+        seq_length,
+        kernel_size, 
+        in_channels,
+        channels,
+        dilations,
+        droput,
+        val_dataset_names,
+        test_dataset_names,
+        optim_cfg, 
+        session_type='all'
+    ):
         super(SkywalkCnnV1, self).__init__()
         self.save_hyperparameters()
+
         self.val_dataset_names = val_dataset_names
         self.test_dataset_names = test_dataset_names
         self.session_type = session_type
         self.kernel_size = kernel_size
-        self.layer1 = nn.Sequential(
-            nn.Conv1d(in_channels, 32, kernel_size),
-            nn.BatchNorm1d(32),
-            nn.ReLU(),
-            nn.Dropout(0.25),
+        self.channels = channels
+        self.dilations = dilations
+        self.dropout = droput
+
+        self.layers = nn.ModuleList([])
+        self.layers.append(
+            nn.Sequential(
+                nn.Conv1d(in_channels, self.channels[0], kernel_size),
+                nn.BatchNorm1d(32),
+                nn.ReLU(),
+                nn.Dropout(0.25),
+            )
         )
-        self.layer2 = ResidualBlock(seq_length - (kernel_size - 1), 32, 32, 32, 3, kernel_size)
-        self.layer3 = ResidualBlock(self.layer2.output_seq_length, 32, 32, 32, 9, kernel_size)
-        self.layer4 = ResidualBlock(self.layer3.output_seq_length, 32, 32, 32, 27, kernel_size)
-        self.layer5 = ResidualBlock(self.layer4.output_seq_length, 32, 32, 32, 81, kernel_size)
-        self.layer6 = nn.Linear(self.layer5.output_seq_length * 32, 2)
-        # for module in self.layers.modules():
-        #     if isinstance(module, nn.Linear) or isinstance(module, nn.Conv1d):
-        #         nn.init.xavier_uniform_(module.weight.data)
-        #         # module.weight.data.fill_(1)
-        #         module.bias.data.fill_(0)
-        self.loss = nn.CrossEntropyLoss(reduction='none')
-        self.hparams.lr = 0.001
+        input_len = seq_length - (kernel_size - 1)
+        for i in range(len(channels) - 1):
+            layer = ResidualBlock(
+                input_len=input_len,
+                channels=channels,
+                dilation=dilations[i],
+                stride=1,
+                kernel_size=kernel_size,
+            )
+            input_len = layer.output_len
+            self.layers.append(layer)
+
+        self.network = nn.Sequential(
+            *self.layers,
+            nn.Flatten(),
+            nn.Linear(input_len * channels[-1], 2),
+        )
+
+        self.loss = nn.BCEWithLogitsLoss(reduction='none')
+        self.optim_cfg = optim_cfg
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = torch.transpose(x, 1, 2)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.layer5(x)
-        x = torch.flatten(x, 1)
-        x = self.layer6(x)
+        x = self.network(x)
         return x
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
-        scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.3)
+        cfg = self.optim_cfg
+        if cfg.type == 'adam':
+            optimizer = torch.optim.Adam(self.parameters(), lr=cfg.lr)
+        if cfg.scheduler == 'reduce_lr':
+            scheduler = ReduceLROnPlateau(optimizer, 'min', factor=cfg.factor)
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
@@ -107,13 +141,9 @@ class SkywalkCnnV1(pl.LightningModule):
         self.log("train/loss", loss)
         return loss
 
-    def validation_step(self, batch, batch_idx, dataset_idx=0):
+    def validation_step(self, batch, batch_idx, loader_idx):
         x, y, w = batch
         y_hat = self(x)
-        # y_same = torch.vstack([1 - y, y]).T
-        # if batch_idx == 0 and dataset_idx == 0:
-        #     tensorboard = cast(TensorBoardLogger, self.logger).experiment
-        #     tensorboard.add_graph(self, x)
         return y.cpu(), y_hat.detach().cpu(), w.cpu()
 
     def validation_epoch_end(self, outputs):
@@ -248,3 +278,4 @@ def get_predictions(model, test_dataset_for_pred):
         output_list += [output]
     output_array = np.concatenate(output_list, axis=0)
     return np.argmax(output_array, axis=1)
+
