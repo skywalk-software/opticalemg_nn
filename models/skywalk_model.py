@@ -20,7 +20,7 @@ from utils.metrics import process_clicks
 class ResidualBlock(nn.Module):
     def __init__(self, input_seq_length, input_channel, output_channel, middle_channel, dilation,
                  kernel_size):
-        super().__init__()
+        super(ResidualBlock, self).__init__()
         self.input_seq_length = input_seq_length
         self.output_seq_length = input_seq_length - (kernel_size - 1) * dilation
         self.input_channel = input_channel
@@ -97,7 +97,7 @@ class SkywalkCnnV1(pl.LightningModule):
         }
 
     def training_step(self, batch, batch_idx):
-        x, y, ts, meta = batch
+        x, y, w, ts, meta = batch
         y_hat = self(x)
         raw_loss = self.loss(y_hat, y)
         loss = torch.sum(raw_loss * w) / torch.sum(w)
@@ -105,13 +105,13 @@ class SkywalkCnnV1(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx, dataset_idx=0):
-        x, y, w = batch
+        x, y, w, ts, meta = batch
         y_hat = self(x)
         # y_same = torch.vstack([1 - y, y]).T
         # if batch_idx == 0 and dataset_idx == 0:
         #     tensorboard = cast(TensorBoardLogger, self.logger).experiment
         #     tensorboard.add_graph(self, x)
-        return y.cpu(), y_hat.detach().cpu(), w.cpu()
+        return y.cpu(), y_hat.detach().cpu(), w.cpu(), meta
 
     def validation_epoch_end(self, outputs):
         tensorboard = cast(TensorBoardLogger, self.logger).experiment

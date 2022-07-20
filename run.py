@@ -5,19 +5,16 @@ from models.skywalk_model import SkywalkCnnV1
 import pytorch_lightning as pl 
 from utils.dataloader import get_dataloaders
 
-
 @hydra.main(version_base="1.2.0", config_path="./config", config_name="conf")
 def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     logger = logging.getLogger(__name__)        
 
-    logger.info("test info message!!")
-
     trainloader, valloader, testloader = get_dataloaders(cfg.data, cfg.dataset, cfg.dataloader)
 
     samp = trainloader.dataset[0]
-    nir, _, _, _ = samp
+    nir, _, _, _, _ = samp
     n_channels = nir.shape[0]
     seq_len = cfg.dataset.seq_length
 
@@ -67,20 +64,16 @@ def main(cfg):
     from pytorch_lightning.callbacks import LearningRateMonitor
     import sys
 
-    kernel_size = 3
-    epochs = 5
-    next_epochs = 20
-
     summary(model, nir.shape, device='cpu')
 
     CKPT_PATH = "./saved_model.ckpt"
 
     # %% training
-    logger = TensorBoardLogger('logs')
+    logger = TensorBoardLogger(name="logs", save_dir="logs")
 
     trainer = Trainer(
         accelerator="cpu" if sys.platform == 'darwin' else "auto",  # temp fix for mps not working
-        max_epochs=epochs,
+        max_epochs=cfg.epochs,
         logger=logger,
         val_check_interval=1.0,
         callbacks=[

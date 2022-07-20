@@ -96,7 +96,16 @@ class SessionDataset(Dataset):
 
     def __len__(self):
         return len(self.data_idxs)
-    
+
+    def get_weight(self, label):
+        weight = torch.ones(label.shape, dtype=torch.float)
+        for i in range(len(weight)):
+            start = max(i - CLICK_REGION, 0)
+            end = min(i + CLICK_REGION, len(weight) - 1)
+            if not torch.any(label[start:end]):
+                weight[i] = NONE_CLICK_REGION_WEIGHT
+        return weight
+
     def __getitem__(self, idx):
         start = self.data_idxs[idx]
         end = start + self.seq_len
@@ -105,8 +114,9 @@ class SessionDataset(Dataset):
         contact_idxs = self.contact_idxs[start:end]
         contact = torch.from_numpy(
             self.contact_d[contact_idxs, self.contact_channel])
+        weight = self.get_weight(contact)
         meta = self.metadata["trial_type"]
-        return data.permute(1, 0), contact, ts, meta
+        return data.permute(1, 0), contact, weight, ts, meta
 
 class SkywalkDataset(Dataset):
     def __init__(self, trials, seq_length, stride, data_stream, contact_channel, stand=None):
