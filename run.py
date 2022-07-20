@@ -1,7 +1,7 @@
 import hydra
 import logging
 from omegaconf import OmegaConf
-from models.cnnv1 import SkywalkCnnV1
+from models.skywalk_model import SkywalkCnnV1
 import pytorch_lightning as pl 
 from utils.dataloader import get_dataloaders
 
@@ -14,25 +14,34 @@ def main(cfg):
 
     logger.info("test info message!!")
 
-    trainloader, valloader, testloader = get_dataloaders(cfg.data, cfg.dataset)
+    trainloader, valloader, testloader = get_dataloaders(cfg.data, cfg.dataset, cfg.dataloader)
 
-    model = SkywalkCnnV1(cfg.model)
+    samp = trainloader.dataset[0]
+    nir, _, _, _ = samp
+    n_channels = nir.shape[0]
+    seq_len = cfg.dataset.seq_length
+
+    model = SkywalkCnnV1(
+        kernel_size=cfg.model.kernel_size, 
+        seq_length=seq_len,
+        in_channels=n_channels,
+    )
 
     callbacks = []
 
-    if cfg.early_stopping:
+    # if cfg.early_stopping:
         # early_stopping = pl.callbacks.EarlyStopping()
-        pass
+    #     pass
 
-    if cfg.enable_checkpointing:
-        checkpointing = pl.callbacks.ModelCheckpoint(
-            dirpath=cfg.checkpoint_dir,
-            filename="{epoch}.ckpt",
-            save_last=True,
-            monitor=cfg.checkpoint_monitor,
-            save_top_k=cfg.checkpoint_top_k,
-        )
-        callbacks.append(checkpointing)
+    # if cfg.enable_checkpointing:
+    #     checkpointing = pl.callbacks.ModelCheckpoint(
+    #         dirpath=cfg.checkpoint_dir,
+    #         filename="{epoch}.ckpt",
+    #         save_last=True,
+    #         monitor=cfg.checkpoint_monitor,
+    #         save_top_k=cfg.checkpoint_top_k,
+    #     )
+    #     callbacks.append(checkpointing)
 
     trainer = pl.Trainer(
         accelerator="cpu",

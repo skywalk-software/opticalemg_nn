@@ -13,6 +13,8 @@ from datetime import datetime as dt
 import yaml
 import h5py
 
+logger = logging.getLogger(__name__)
+
 CLICK_REGION = 10
 NONE_CLICK_REGION_WEIGHT = 2
 
@@ -103,7 +105,8 @@ class SessionDataset(Dataset):
         contact_idxs = self.contact_idxs[start:end]
         contact = torch.from_numpy(
             self.contact_d[contact_idxs, self.contact_channel])
-        return data.permute(1, 0), contact, ts
+        meta = self.metadata["trial_type"]
+        return data.permute(1, 0), contact, ts, meta
 
 class SkywalkDataset(Dataset):
     def __init__(self, trials, seq_length, stride, data_stream, contact_channel, stand=None):

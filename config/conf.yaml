@@ -4,10 +4,16 @@ hydra:
 
 defaults:
   - _self_
-  - model: convnet
+  - model: skywalkcnnv1
   - data: 
     - tyler
   - dataset: dataset
+  - dataloader: dataloader
 
 deterministic: true
-seed: 0
+dev_run: false
+progress_bar: true
+resume_training: false
+print_summary: true
+detect_anomaly: true
+val_freq: 1
