@@ -7,7 +7,7 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
-from torch.utils.data import random_split
+from torch.utils.data import random_split as torch_random_split
 from functools import partial
 from datetime import datetime as dt
 import yaml
@@ -187,16 +187,16 @@ def filter_df(config, df):
 def select_data_files(config, name):
     df = build_data_frame(config['dirpaths'])
     if df is None:
-        logger.debug('No data files found for data config: {}'.format(name))
+        logger.debug('No H5 files found for data config: {}'.format(name))
         return None
     df = filter_df(config, df)
     files = df['filename'].tolist()
     dirs = df['directory'].tolist()
     if len(files) == 0:
-        logger.debug('No data files found for data config: {}'.format(name))
+        logger.debug('No H5 files found for data config: {}'.format(name))
         return None
     files = [os.path.join(d, f + ".h5") for d, f in zip(dirs, files)]
-    logger.info('Found {} data files for data config {}'.format(len(files), name))
+    logger.info('Found {} H5 files for data config {}'.format(len(files), name))
     return files
 
 def get_files_from_all(cfgs):
@@ -221,44 +221,79 @@ def get_files_from_all(cfgs):
 def standardize(data, mu, sigma):
     return (data - mu[:, None]) / sigma[:, None]
 
+def random_split(dataset, split_fractions):
+    split = {}
+    for k, v in split_fractions.items():
+        dataset, split[k] = torch_random_split(dataset, [len(dataset) - v, v])
+    return split
+
 def get_datasets(data_cfg, dataset_cfg):
-    _, allfiles = get_files_from_all(data_cfg)
-    trials = [Trial(f) for f in allfiles]
+    files_by_cfg, _ = get_files_from_all(data_cfg)
+    trials = {
+        name: [Trial(f) for f in files_by_cfg[name]] for name in files_by_cfg.keys()
+    }
 
     if dataset_cfg.standardize:
+        logger.info("Computing statisitics for standardization... this may take a while")
+        all_trials = []
+        for name, trials in trials.items():
+            all_trials += trials
         logger.info('Standardizing data')
         mu, sigma = Trial.trial_stats(
-            trials, dataset_cfg.stream, dataset_cfg.seq_length, dataset_cfg.stride)
+            all_trials, dataset_cfg.stream, dataset_cfg.seq_length, dataset_cfg.stride)
         stand = partial(standardize, mu=mu, sigma=sigma)
     else:
+        logger.info("Skipping standardization")
         stand = None
 
-    dataset = SkywalkDataset(
-        trials, 
-        dataset_cfg.seq_length, 
-        dataset_cfg.stride, 
-        dataset_cfg.stream, 
-        dataset_cfg.contact_channel,
-        stand=stand
-    )
+    all_train = []
+    all_val = []
+    all_test = []
 
-    logger.info("Train, val, test splits are {}".format(
-        dataset_cfg.train_percent, dataset_cfg.val_percent, dataset_cfg.test_percent))
+    for name, trials in trials.items():
+        logger.info('Building dataset for data config: {}'.format(name))
+        dataset = SkywalkDataset(
+            trials, 
+            dataset_cfg.seq_length, 
+            dataset_cfg.stride, 
+            dataset_cfg.stream, 
+            dataset_cfg.contact_channel,
+            stand=stand
+        )
+        this_cfg = data_cfg[name]
+        logger.info("Train, val, test splits for {} are {}, {}, {}".format(
+            name, this_cfg.train_percent, this_cfg.val_percent, this_cfg.test_percent))
 
-    train_count, val_count, test_count = list(map(lambda x : round(x * len(dataset)),\
-            [dataset_cfg.train_percent, dataset_cfg.val_percent, dataset_cfg.test_percent]))
+        train_count, val_count, test_count = list(map(lambda x : round(x * len(dataset)),\
+                [this_cfg.train_percent, this_cfg.val_percent, this_cfg.test_percent]))
 
-    train, val, test = random_split(
-        dataset, 
-        [train_count, val_count, test_count]
-    )
+        splits = random_split(
+            dataset, {"train": train_count, "val": val_count, "test": test_count})
 
-    logger.info('Size of training, val, test sets: {} {} {}'.format(len(train), len(val), len(test)))
+        train, val, test = splits["train"], splits["val"], splits["test"]
+
+        logger.info('Size of {} train, val, test sets: {}, {}, {}'.format(
+            name, len(train), len(val), len(test)))
+
+        all_train.append(train)
+        all_val.append(val)
+        all_test.append(test)
     
+    train = ConcatDataset(all_train)
+    val = ConcatDataset(all_val)
+    test = ConcatDataset(all_test)
+
+    logger.info('TOTAL Size of train, val, test sets: {} {} {}'.format(len(train), len(val), len(test)))
+
     return train, val, test
+
 
 def get_dataloaders(data_cfg, dataset_cfg, dataloader_cfg):
     train, val, test = get_datasets(data_cfg, dataset_cfg)
+    logger.info('Building dataloaders')
+    logger.info("Batch size is: {}".format(dataloader_cfg.batch_size))
+    logger.info("Num workers is: {}".format(dataloader_cfg.num_workers))
+    logger.info("Pin memory is: {}".format(dataloader_cfg.pin_memory))
     train_loader = DataLoader(
         train, batch_size=dataloader_cfg.batch_size, shuffle=True, 
         pin_memory=dataloader_cfg.pin_memory, num_workers=dataloader_cfg.num_workers)

@@ -7,7 +7,6 @@ from utils.dataloader import get_dataloaders
 
 @hydra.main(version_base="1.2.0", config_path="./config", config_name="conf")
 def main(cfg):
-    print(OmegaConf.to_yaml(cfg))
 
     logger = logging.getLogger(__name__)        
 
@@ -71,12 +70,12 @@ def main(cfg):
 
     CKPT_PATH = f"{os.getcwd()}/ckpts/model.ckpt"
 
-    logger = TensorBoardLogger(name="logs", save_dir=f"{os.getcwd()}/logs")
+    tboard_logger = TensorBoardLogger(name="logs", save_dir=f"{os.getcwd()}/logs")
 
     trainer = Trainer(
         accelerator="cpu" if sys.platform == 'darwin' else "auto",  # temp fix for mps not working
         max_epochs=cfg.epochs,
-        logger=logger,
+        logger=tboard_logger,
         val_check_interval=1.0,
         callbacks=[
             LearningRateMonitor(logging_interval='epoch')

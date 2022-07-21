@@ -9,6 +9,8 @@ defaults:
   - model: skywalkcnnv1
   - data: 
     - tyler
+    - jackie
+    - tianshili
   - dataset: dataset
   - dataloader: dataloader
 

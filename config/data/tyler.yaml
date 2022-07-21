@@ -1,4 +1,4 @@
-tyler:
+tylerchen:
   dirpaths: [/Users/luke/skywalk/local-data,]
   users: [tylerchen,]
   datacollector_versions: [guitar_hero_tap_hold,]
@@ -12,5 +12,8 @@ tyler:
   ]
   dates: ['2022-03-06', '2022-03-18',]
   hands: null
+  train_percent: 0.6
+  val_percent: 0.2
+  test_percent: 0.2
   exclude_files: []
   

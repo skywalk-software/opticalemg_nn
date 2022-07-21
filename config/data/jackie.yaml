@@ -1,0 +1,13 @@
+jackieyang:
+  dirpaths: [/Users/luke/skywalk/local-data,]
+  users: [jackieyang,]
+  datacollector_versions: [guitar_hero_tap_hold,]
+  firmware_versions: null
+  trial_types: null
+  dates: null
+  hands: null
+  train_percent: 0.0
+  val_percent: 0.2
+  test_percent: 0.2
+  exclude_files: []
+  

@@ -176,11 +176,11 @@ class SkywalkCnnV1(pl.LightningModule):
                     self.log(f"val/{k}/{_k}", _v)
 
             if v['detected_clicks'] > 1:
-                tensorboard.add_histogram(f"{k}onset", np.array(v['on_set_offsets']), self.current_epoch)
-                tensorboard.add_histogram(f"{k}offset", np.array(v['off_set_offsets']), self.current_epoch)
+                tensorboard.add_histogram(f"val/{k}/onset", np.array(v['on_set_offsets']), self.current_epoch)
+                tensorboard.add_histogram(f"{k}/offset", np.array(v['off_set_offsets']), self.current_epoch)
 
             if len(v['drops']) > 1:
-                tensorboard.add_histogram(f"{k}drops", np.array(v['drops']), self.current_epoch)
+                tensorboard.add_histogram(f"val/{k}/drops", np.array(v['drops']), self.current_epoch)
 
 
 
