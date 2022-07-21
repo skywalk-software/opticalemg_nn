@@ -177,7 +177,8 @@ def filter_df(config, df):
                 condition = df[k].isin(config[v])
             else:
                 condition &= df[k].isin(config[v])
-    if "exclude_files" in config and config["exclude_files"] is not None:
+    if "exclude_files" in config and config["exclude_files"] is not None\
+        and len(config["exclude_files"]) > 0:
         condition &= ~df["filename"].isin(config["exclude_files"])
     if condition is None:
         logger.debug('No metadata filters appplied')
