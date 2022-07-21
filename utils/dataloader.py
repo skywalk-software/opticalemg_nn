@@ -15,8 +15,9 @@ import h5py
 
 logger = logging.getLogger(__name__)
 
-CLICK_REGION = 10
-NONE_CLICK_REGION_WEIGHT = 2
+CLICK_REGION_DIST = 10
+NONE_CLICK_REGION_WEIGHT = torch.LongTensor([2])
+CLICK_REGION_WEIGHT = torch.LongTensor([1])
 
 metadata_keymap = {
     'user': 'users',
@@ -85,38 +86,40 @@ class SessionDataset(Dataset):
         self.seq_len = seq_len
         self.data_stream = data_stream
         self.data = data
+        
         self.nir_d = self.data[f"{self.data_stream}_data"]
         self.nir_ts = self.data[f"{self.data_stream}_timestamps"]
-        self.contact_d = self.data["contact_data"]
         self.contact_ts = self.data["contact_timestamps"]
         self.contact_idxs = np.searchsorted(self.contact_ts, self.nir_ts)
         self.contact_channel = contact_channel
-        self.data_idxs = list(range(0, self.nir_d.shape[0] - self.seq_len, self.stride))
+        self.contact_d = self.data["contact_data"][self.contact_idxs][(seq_len-1):, contact_channel]
+        self.contact_ts = self.contact_ts[self.contact_idxs][(seq_len-1):]
+        self.data_idxs = list(range(0, self.nir_d.shape[0] - self.seq_len + 1, self.stride))
         self.metadata = metadata
 
     def __len__(self):
         return len(self.data_idxs)
 
-    def get_weight(self, label):
-        weight = torch.ones(label.shape, dtype=torch.float)
-        for i in range(len(weight)):
-            start = max(i - CLICK_REGION, 0)
-            end = min(i + CLICK_REGION, len(weight) - 1)
-            if not torch.any(label[start:end]):
-                weight[i] = NONE_CLICK_REGION_WEIGHT
-        return weight
+    def get_weight(self, idx):
+        start = max(idx - CLICK_REGION_DIST, 0)
+        end = min(idx + CLICK_REGION_DIST, self.nir_ts.shape[0])
+        if (self.contact_d[start:end] == 0).all():
+            return NONE_CLICK_REGION_WEIGHT
+        else:
+            return CLICK_REGION_WEIGHT
 
     def __getitem__(self, idx):
         start = self.data_idxs[idx]
         end = start + self.seq_len
         data = torch.from_numpy(self.nir_d[start:end, :])
-        ts = torch.from_numpy(self.nir_ts[start:end])
-        contact_idxs = self.contact_idxs[start:end]
-        contact = torch.from_numpy(
-            self.contact_d[contact_idxs, self.contact_channel])
-        weight = self.get_weight(contact)
+        data = data.permute(1, 0)
+        data_ts = torch.from_numpy(self.nir_ts[start:end]).float()
+        label = torch.LongTensor([self.contact_d[start]])
+        label_ts = torch.Tensor([self.contact_ts[start]])
+        weight = self.get_weight(start)
         meta = self.metadata["trial_type"]
-        return data.permute(1, 0), contact, weight, ts, meta
+        assert (data_ts[-1] == label_ts[0]).item()
+        return data, label, weight, data_ts, label_ts, meta
 
 class SkywalkDataset(Dataset):
     def __init__(self, trials, seq_length, stride, data_stream, contact_channel, stand=None):
@@ -184,13 +187,13 @@ def filter_df(config, df):
 def select_data_files(config, name):
     df = build_data_frame(config['dirpaths'])
     if df is None:
-        logger.debug('No data files found for data config {}'.format(name))
+        logger.debug('No data files found for data config: {}'.format(name))
         return None
     df = filter_df(config, df)
     files = df['filename'].tolist()
     dirs = df['directory'].tolist()
     if len(files) == 0:
-        logger.debug('No data files found for data config {}'.format(name))
+        logger.debug('No data files found for data config: {}'.format(name))
         return None
     files = [os.path.join(d, f + ".h5") for d, f in zip(dirs, files)]
     logger.info('Found {} data files for data config {}'.format(len(files), name))
@@ -198,7 +201,7 @@ def select_data_files(config, name):
 
 def get_files_from_all(cfgs):
     files_dict = {}
-    logger.info('Collecting files from data configs: {}'.format(",".join(list(cfgs.keys()))))
+    logger.info('Collecting files from data configs: {}'.format(list(cfgs.keys())))
     for name, cfg in cfgs.items():
         cfg_files = select_data_files(cfg, name)
         if cfg_files is None:
@@ -223,6 +226,7 @@ def get_datasets(data_cfg, dataset_cfg):
     trials = [Trial(f) for f in allfiles]
 
     if dataset_cfg.standardize:
+        logger.info('Standardizing data')
         mu, sigma = Trial.trial_stats(
             trials, dataset_cfg.stream, dataset_cfg.seq_length, dataset_cfg.stride)
         stand = partial(standardize, mu=mu, sigma=sigma)
@@ -238,6 +242,9 @@ def get_datasets(data_cfg, dataset_cfg):
         stand=stand
     )
 
+    logger.info("Train, val, test splits are {}".format(
+        dataset_cfg.train_percent, dataset_cfg.val_percent, dataset_cfg.test_percent))
+
     train_count, val_count, test_count = list(map(lambda x : round(x * len(dataset)),\
             [dataset_cfg.train_percent, dataset_cfg.val_percent, dataset_cfg.test_percent]))
 
@@ -245,6 +252,8 @@ def get_datasets(data_cfg, dataset_cfg):
         dataset, 
         [train_count, val_count, test_count]
     )
+
+    logger.info('Size of training, val, test sets: {} {} {}'.format(len(train), len(val), len(test)))
     
     return train, val, test
 

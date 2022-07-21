@@ -111,8 +111,12 @@ def process_clicks(y: torch.Tensor, y_hat: torch.Tensor):
         # print(f"{i}:")
         process_gen.send((y[i], y_hat[i]))
     process_gen.send((0, 0))
-    return \
-        total_true_clicks, total_false_clicks, total_missed_clicks, total_detected_clicks,\
-        on_set_offsets, off_set_offsets, drops
-
-
+    return {
+        "true_clicks": total_true_clicks,
+        "false_clicks": total_false_clicks,
+        "missed_clicks": total_missed_clicks,
+        "detected_clicks": total_detected_clicks,
+        "on_set_offsets": on_set_offsets,
+        "off_set_offsets": off_set_offsets,
+        "drops": drops
+    }

@@ -97,145 +97,91 @@ class SkywalkCnnV1(pl.LightningModule):
         }
 
     def training_step(self, batch, batch_idx):
-        x, y, w, ts, meta = batch
+        x, y, w, x_ts, y_ts, meta = batch
         y_hat = self(x)
-        raw_loss = self.loss(y_hat, y)
-        loss = torch.sum(raw_loss * w) / torch.sum(w)
+        raw_loss = self.loss(y_hat, y.squeeze())
+        loss = torch.sum(raw_loss * w.squeeze()) / torch.sum(w)
         self.log("train/loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx, dataset_idx=0):
-        x, y, w, ts, meta = batch
+        x, y, w, x_ts, y_ts, meta = batch
         y_hat = self(x)
-        # y_same = torch.vstack([1 - y, y]).T
-        # if batch_idx == 0 and dataset_idx == 0:
-        #     tensorboard = cast(TensorBoardLogger, self.logger).experiment
-        #     tensorboard.add_graph(self, x)
         return y.cpu(), y_hat.detach().cpu(), w.cpu(), meta
 
     def validation_epoch_end(self, outputs):
         tensorboard = cast(TensorBoardLogger, self.logger).experiment
 
-        val_prefix = f"val-{self.session_type}/"
-        val_loss_total = 0
-        val_acc_total = 0
-        val_samples = 0
+        trial_types = []
+        for _, _, _, meta in outputs:
+            trial_types += meta
+        trial_types = list(set(trial_types))
 
-        val_total_true_clicks = 0
-        val_total_false_clicks = 0
-        val_total_missed_clicks = 0
-        val_total_detected_clicks = 0
-        val_on_set_offsets = []
-        val_off_set_offsets = []
-        val_drops = []
+        results_dict = {}
+        for trial_type in trial_types + ["total"]:
+            results_dict[trial_type] = {
+                'y_list': [],
+                'y_hat_list': [],
+                'w_list': [],
+                'true_clicks': None,
+                'false_clicks': None,
+                'missed_clicks': None,
+                'detected_clicks': None,
+                'on_set_offsets': None,
+                'off_set_offsets': None,
+                'drops': None,
+                'loss': None,
+                'accuracy': None,
+            }
 
-        if not isinstance(outputs[0], list):
-            outputs = [outputs]
+        for batch in outputs:
+            y, y_hat, w, m = batch
+            for i in range(len(y)):
+                results_dict[m[i]]['y_list'].append(y[i])
+                results_dict[m[i]]['y_hat_list'].append(y_hat[i])
+                results_dict[m[i]]['w_list'].append(w[i])
+                results_dict["total"]['y_list'].append(y[i])
+                results_dict["total"]['y_hat_list'].append(y_hat[i])
+                results_dict["total"]['w_list'].append(w[i])
 
-        for dataset_idx, dataset_outputs in enumerate(outputs):
-            dataset_prefix = f"val-full/{self.val_dataset_names[dataset_idx]}/"
-            y_list = []
-            y_hat_list = []
-            w_list = []
-            for batch_idx, (y, y_hat, w) in enumerate(dataset_outputs):
-                y_list += [y]
-                y_hat_list += [y_hat]
-                w_list += [w]
-            total_y = torch.cat(y_list)
-            total_y_hat = torch.cat(y_hat_list)
-            total_w = torch.cat(w_list)
+        to_log = ['accuracy', 'loss', 'FP-P', 'TP-P', 'drops-P', 'std-onset', 'std-offset']
 
-            assert len(total_y) == len(total_y_hat)
+        for k, v in results_dict.items():
+            y = torch.cat(v['y_list'])
+            y_hat = torch.stack(v['y_hat_list'])
+            w = torch.cat(v['w_list'])
 
-            samples = len(total_y)
+            assert y.shape[0] == y_hat.shape[0]
+            assert y.shape[0] == w.shape[0]
+            n_samples = y.shape[0]
+            raw_loss = self.loss(y_hat, y)
+            loss = torch.sum(w * raw_loss) / torch.sum(w)
+            v['loss'] = loss.item()
+            estimated_y = (y_hat[:, 0] < y_hat[:, 1]).long()
+            accuracy = torch.sum((estimated_y == y)) / n_samples
+            v['accuracy'] = accuracy.item()
+            result = process_clicks(y, estimated_y)
+            assert len(result['off_set_offsets']) == len(result['on_set_offsets']) == result['detected_clicks']
+            for _k, _v in result.items():
+                v[_k] = _v
 
-            raw_loss = self.loss(total_y_hat, total_y)
-            loss = torch.sum(total_w * raw_loss) / torch.sum(total_w)
-            estimated_y = (total_y_hat[:, 0] < total_y_hat[:, 1]).long()
-            accuracy = torch.sum((estimated_y == total_y)) / samples
+            v['FP-P'] = math.nan if v['true_clicks'] == 0 else v['false_clicks'] / v['true_clicks']
+            v['TP-P'] = math.nan if v['true_clicks'] == 0 else v['detected_clicks'] / v['true_clicks']
+            v['drops-P'] = math.nan if v['true_clicks'] == 0 else len(v['drops']) / v['true_clicks']
+            v['std-onset'] = math.nan if v['detected_clicks'] < 2 else np.std(v['on_set_offsets'])
+            v['std-offset'] = math.nan if v['detected_clicks'] < 2 else np.std(v['off_set_offsets'])
+            
+            for _k, _v in v.items():
+                if _k in to_log:
+                    self.log(f"val/{k}/{_k}", _v)
 
-            result = process_clicks(total_y, estimated_y)
-            total_true_clicks, total_false_clicks, total_missed_clicks, total_detected_clicks, \
-            on_set_offsets, off_set_offsets, drops = result
-            assert len(on_set_offsets) == len(off_set_offsets) == total_detected_clicks
-            self.log(f"{dataset_prefix}loss", loss)
-            self.log(f"{dataset_prefix}accuracy", accuracy)
-            self.log(f"{dataset_prefix}FP-P",
-                     math.nan if total_true_clicks == 0 else total_false_clicks / total_true_clicks)
-            self.log(f"{dataset_prefix}TP-P",
-                     math.nan if total_true_clicks == 0 else total_detected_clicks / total_true_clicks)
-            self.log(f"{dataset_prefix}drops-P", math.nan if total_true_clicks == 0 else len(drops) / total_true_clicks)
-            self.log(f"{dataset_prefix}std-onset",
-                     math.nan if total_detected_clicks < 2 else statistics.stdev(on_set_offsets))
-            self.log(f"{dataset_prefix}std-offset",
-                     math.nan if total_detected_clicks < 2 else statistics.stdev(off_set_offsets))
+            if v['detected_clicks'] > 1:
+                tensorboard.add_histogram(f"{k}onset", np.array(v['on_set_offsets']), self.current_epoch)
+                tensorboard.add_histogram(f"{k}offset", np.array(v['off_set_offsets']), self.current_epoch)
 
-            if total_detected_clicks > 1:
-                tensorboard.add_histogram(f"{dataset_prefix}onset", np.array(on_set_offsets), self.current_epoch)
-                tensorboard.add_histogram(f"{dataset_prefix}offset", np.array(off_set_offsets), self.current_epoch)
+            if len(v['drops']) > 1:
+                tensorboard.add_histogram(f"{k}drops", np.array(v['drops']), self.current_epoch)
 
-            if len(drops) > 1:
-                tensorboard.add_histogram(f"{dataset_prefix}drops", np.array(drops), self.current_epoch)
-
-            length = len(estimated_y)
-            # if length < 1000:
-            #     start = 0
-            #     end = length
-            # else:
-            #     start = length // 2 - 500
-            #     end = length // 2 + 500
-            start = 0
-            end = length
-            fig: matplotlib.figure = plot_predictions(estimated_y[start:end].numpy(), total_y[start:end].numpy(), None)
-            # fig: matplotlib.figure = plot_predictions(estimated_y.numpy(), total_y.numpy(), None)
-            # fig.show()
-
-            buf = io.BytesIO()
-            fig.set_size_inches((length // 100, 3))
-            fig.savefig(buf, format='jpeg')
-            buf.seek(0)
-            image = PIL.Image.open(buf)
-            image = ToTensor()(image)
-            plt.close(fig)
-            tensorboard.add_image(f"{dataset_prefix}predictions", image, self.current_epoch)
-
-            val_samples += samples
-            val_loss_total += loss * samples
-            val_acc_total += accuracy * samples
-
-            val_total_true_clicks += total_true_clicks
-            val_total_false_clicks += total_false_clicks
-            val_total_missed_clicks += total_missed_clicks
-            val_total_detected_clicks += total_detected_clicks
-            val_on_set_offsets += on_set_offsets
-            val_off_set_offsets += off_set_offsets
-            val_drops += drops
-
-        val_loss = val_loss_total / val_samples
-        val_acc = val_acc_total / val_samples
-
-        self.log(f"{val_prefix}loss", val_loss)
-        self.log(f"{val_prefix}accuracy", val_acc)
-        fp_p = math.nan if val_total_true_clicks == 0 else val_total_false_clicks / val_total_true_clicks
-        self.log(f"{val_prefix}FP-P", fp_p)
-        tp_p = math.nan if val_total_true_clicks == 0 else val_total_detected_clicks / val_total_true_clicks
-        self.log(f"{val_prefix}TP-P", tp_p)
-        drops_p = math.nan if val_total_true_clicks == 0 else len(val_drops) / val_total_true_clicks
-        self.log(f"{val_prefix}drops-P", drops_p)
-        std_onset = math.nan if val_total_detected_clicks < 2 else statistics.stdev(val_on_set_offsets)
-        self.log(f"{val_prefix}std-onset", std_onset)
-        std_offset = math.nan if val_total_detected_clicks < 2 else statistics.stdev(val_off_set_offsets)
-        self.log(f"{val_prefix}std-offset", std_offset)
-
-        print(f"[for notion reporting] + {self.session_type}"
-              f"\t{tp_p:.4f}\t{fp_p:.4f}\t{drops_p:.4f}\t{val_loss:.4f}\t{std_onset:.4f}\t{std_offset:.4f}")
-
-        if val_total_detected_clicks > 1:
-            tensorboard.add_histogram(f"{val_prefix}onset", np.array(val_on_set_offsets), self.current_epoch)
-            tensorboard.add_histogram(f"{val_prefix}offset", np.array(val_off_set_offsets), self.current_epoch)
-        if len(val_drops) > 1:
-            tensorboard.add_histogram(f"{val_prefix}drops", np.array(val_drops), self.current_epoch)
-        return val_loss
 
 
 def get_predictions(model, test_dataset_for_pred):
